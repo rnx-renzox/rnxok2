@@ -138,13 +138,13 @@ function Invoke-Fastboot($fbArgs) {
     $fbExe = Get-FastbootExe
     if (-not $fbExe) { FbLog "[!] fastboot.exe no encontrado"; return $null }
     try {
-        $tmpF2 = [System.IO.Path]::GetTempFileName()
-        & cmd.exe /c "`"$fbExe`" $fbArgs > `"$tmpF2`" 2>&1"
-        $res2 = if (Test-Path $tmpF2) {
-            [System.IO.File]::ReadAllText($tmpF2, [System.Text.Encoding]::UTF8)
-        } else { "" }
-        try { Remove-Item $tmpF2 -Force -EA SilentlyContinue } catch {}
-        return $res2.Trim()
+        # IMPORTANTE: usar & operator directamente, NO ProcessStartInfo ni Start-Job.
+        # Los procesos hijo aislados no heredan los handles USB de la sesion PS.
+        # Solo el operador & ejecuta en el mismo contexto y ve los drivers USB.
+        $argArr = $fbArgs -split "\s+" | Where-Object { $_ -ne "" }
+        $result = & $fbExe $argArr 2>&1
+        if ($result -is [array]) { return ($result | ForEach-Object { "$_" }) -join "`n" }
+        return "$result"
     } catch { FbLog "[!] Error ejecutando fastboot: $_"; return $null }
 }
 
@@ -608,16 +608,10 @@ $fbBtnLeer.Add_Click({
     # El operador & ejecuta en el mismo proceso PS, con los mismos handles de sesion.
     function RunFbDirect($exe, $fbArgs) {
         try {
-            # Usar cmd.exe via & para heredar contexto USB de la sesion PS
-            # (ProcessStartInfo crea proceso hijo aislado que no ve el driver USB)
-            $tmpF = [System.IO.Path]::GetTempFileName()
-            $cmdLine = "`"$exe`" $fbArgs"
-            & cmd.exe /c "$cmdLine > `"$tmpF`" 2>&1"
-            $result = if (Test-Path $tmpF) {
-                [System.IO.File]::ReadAllText($tmpF, [System.Text.Encoding]::UTF8)
-            } else { "" }
-            try { Remove-Item $tmpF -Force -EA SilentlyContinue } catch {}
-            return $result.Trim()
+            $argArr = $fbArgs -split "\s+" | Where-Object { $_ -ne "" }
+            $result = & $exe $argArr 2>&1
+            if ($result -is [array]) { return ($result | ForEach-Object { "$_" }) -join "`n" }
+            return "$result"
         } catch { return "" }
     }
 
@@ -627,20 +621,14 @@ $fbBtnLeer.Add_Click({
     # Paso 2: devices
     $devOut = RunFbDirect $fbExe "devices"
 
-
     # Filtrar lineas de dispositivos reales
-    # Also split by 
-    $devOutLines = ($devOut -replace "
-","") -split "
-"
-    $deviceLines = $devOutLines | Where-Object {
+    $deviceLines = ($devOut -split "`n") | Where-Object {
         $l = $_.Trim()
         $l -ne "" -and
         $l -notmatch "^List of devices" -and
         $l -notmatch "^fastboot\.exe" -and
-        $l -notmatch "^\s*<" -and
-        $l -notmatch "^\s*\*" -and
-        $l -imatch "fastboot"
+        $l -notmatch "^<" -and
+        ($l -match "\tfastboot$" -or $l -match "\s+fastboot$" -or $l -match "fastboot$")
     }
 
     if ($deviceLines.Count -eq 0) {

@@ -106,6 +106,7 @@ $Global:lblStorage = New-SideLabel "STORAGE     : -"  480
 $tabs          = New-Object Windows.Forms.TabControl
 $tabs.Location = New-Object System.Drawing.Point(268, 8)
 $tabs.Size     = New-Object System.Drawing.Size(874, 643)
+$tabs.Multiline = $true   # permite que los tabs desbordantes pasen a segunda fila
 $tabs.Font     = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($tabs)
 

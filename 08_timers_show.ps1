@@ -10,14 +10,11 @@ $timerFb.Add_Tick({
     $fbExe = Get-FastbootExe
     if (-not $fbExe) { return }
     try {
-        $psi2 = New-Object System.Diagnostics.ProcessStartInfo
-        $psi2.FileName = $fbExe; $psi2.Arguments = "devices"
-        $psi2.RedirectStandardOutput = $true; $psi2.RedirectStandardError = $true
-        $psi2.UseShellExecute = $false; $psi2.CreateNoWindow = $true
-        $p2 = New-Object System.Diagnostics.Process; $p2.StartInfo = $psi2
-        $p2.Start() | Out-Null
-        $out2 = $p2.StandardOutput.ReadToEnd(); $p2.WaitForExit()
-        $hasFb = $out2 -match "\tfastboot"
+        # DEBE usar & operator — ProcessStartInfo no hereda handles USB del driver
+        $argsFb = "devices" -split "\s+" | Where-Object { $_ -ne "" }
+        $resFb  = & $fbExe $argsFb 2>&1
+        $out2   = if ($resFb -is [array]) { ($resFb | ForEach-Object { "$_" }) -join "`n" } else { "$resFb" }
+        $hasFb  = $out2 -match "\tfastboot"
         if ($hasFb -and -not $script:FB_LAST_DETECTED) {
             $script:FB_LAST_DETECTED = $true
             $serial2 = ($out2 -split "\t")[0].Trim()
@@ -44,11 +41,9 @@ $timerFb.Start()
 $timer          = New-Object Windows.Forms.Timer
 $timer.Interval = 2500   # 2.5s - suficiente para no solapar jobs ADB
 $timer.Add_Tick({
-    # En Download Mode el sidebar muestra info de Heimdall, no ADB.
-    # El timer ADB no debe correr cuando estamos en ese modo
-    # (lo detectamos por el texto del label MODO)
+    # No correr en Download Mode ni en Fastboot Mode (interferiria con el sidebar)
     $modoTxt = $Global:lblModo.Text
-    if ($modoTxt -imatch "DOWNLOAD") { return }
+    if ($modoTxt -imatch "DOWNLOAD|FASTBOOT") { return }
     Get-DeepDeviceStatus
 })
 $timer.Start()

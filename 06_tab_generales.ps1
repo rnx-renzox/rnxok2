@@ -1,4 +1,87 @@
 #==========================================================================
+# TAB GENERALES: UTILIDADES GENERALES - Layout y construccion de controles
+# (Movido desde 04_tab_samsung.ps1 para separar logica Samsung de Generales)
+#==========================================================================
+
+#==========================================================================
+$tabGen           = New-Object Windows.Forms.TabPage
+$tabGen.Text      = "UTILIDADES GENERALES"
+$tabGen.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+$tabs.TabPages.Add($tabGen)
+
+# ---- Metricas compartidas con ADB para coherencia visual ----
+# Col izq x=6 w=422 | gap=8 | col der x=436 w=422
+$GX_PAD  = 6
+$GX_LOGX = 436
+$GX_GW   = 422
+$GX_LOGW = $GX_GW
+$GX_BTW  = 195   # mismo que ADB
+$GX_BTH  = 56    # mismo que ADB
+$GX_PPX  = 14
+$GX_PPY  = 20
+$GX_GGX  = 8
+$GX_GGY  = 8
+$GX_GGAP = 8
+
+# Altura de cada grupo: 2 filas de botones
+$GX_GH = $GX_PPY + 2*($GX_BTH+$GX_GGY) - $GX_GGY + 14
+
+$GX_Y1 = 6
+$GX_Y2 = $GX_Y1 + $GX_GH + $GX_GGAP
+$GX_Y3 = $GX_Y2 + $GX_GH + $GX_GGAP
+
+# ---- Grupos columna izquierda ----
+# G1 y G3: 2 filas (4 botones). G2: 3 filas (6 botones)
+$GX_GH2 = $GX_PPY + 3*($GX_BTH+$GX_GGY) - $GX_GGY + 14   # altura para 3 filas
+$GX_GH1 = $GX_GH   # G1 mantiene 2 filas
+$GX_GH3 = $GX_GH   # G3 mantiene 2 filas
+
+$GX_Y2B = $GX_Y1 + $GX_GH1 + $GX_GGAP
+$GX_Y3B = $GX_Y2B + $GX_GH2 + $GX_GGAP
+
+$grpG1 = New-GBox $tabGen "ARCHIVOS / FIRMWARE"      $GX_PAD $GX_Y1  $GX_GW $GX_GH1 "Red"
+$grpG2 = New-GBox $tabGen "PARCHEO DE PARTICIONES"  $GX_PAD $GX_Y2B $GX_GW $GX_GH2 "Cyan"
+$grpG3 = New-GBox $tabGen "TALLER / GESTION"        $GX_PAD $GX_Y3B $GX_GW $GX_GH3 "Magenta"
+
+$GL1=@("ORGANIZAR FIRMWARE","RENOMBRAR ARCHIVOS","EXTRAER FIRMWARE","VERIFICAR CHECKSUM")
+$GL2=@("OEMINFO MDM HONOR","MODEM MI ACCOUNT","EFS SAMSUNG SIM 2","PERSIST MI ACCOUNT",
+       "HABILITAR MISC MOTOROLA","FLASH PARTICION IMG")
+$GL3=@("CREAR FICHA CLIENTE","ADMIN CLIENTES","GENERAR REPORTE","ABRIR CARPETA TRABAJO")
+
+$btnsG1=Place-Grid $grpG1 $GL1 "Red"     2 $GX_BTW $GX_BTH $GX_PPX $GX_PPY $GX_GGX $GX_GGY
+$btnsG2=Place-Grid $grpG2 $GL2 "Cyan"    2 $GX_BTW $GX_BTH $GX_PPX $GX_PPY $GX_GGX $GX_GGY
+$btnsG3=Place-Grid $grpG3 $GL3 "Magenta" 2 $GX_BTW $GX_BTH $GX_PPX $GX_PPY $GX_GGX $GX_GGY
+
+$btnEditOem  =$btnsG2[0]
+$btnEFSMod   =$btnsG2[1]
+$btnEFSDirec =$btnsG2[2]
+$btnPersist  =$btnsG2[3]
+$btnRepairNV =$btnsG2[4]
+$btnFlashPart=$btnsG2[5]
+
+# ---- Log columna derecha - altura completa igual que ADB ----
+$GX_LOGY = 6
+$GX_LOGH = 616
+
+$Global:logGen           = New-Object Windows.Forms.TextBox
+$Global:logGen.Multiline = $true
+$Global:logGen.Location  = New-Object System.Drawing.Point($GX_LOGX, $GX_LOGY)
+$Global:logGen.Size      = New-Object System.Drawing.Size($GX_LOGW, $GX_LOGH)
+$Global:logGen.BackColor = "Black"; $Global:logGen.ForeColor = "White"
+$Global:logGen.BorderStyle = "FixedSingle"; $Global:logGen.ScrollBars = "Vertical"
+$Global:logGen.Font      = New-Object System.Drawing.Font("Consolas",9)
+$tabGen.Controls.Add($Global:logGen)
+# Context menu: Limpiar Log
+$ctxGen = New-Object System.Windows.Forms.ContextMenuStrip
+$mnuClearGen = $ctxGen.Items.Add("Limpiar Log")
+$mnuClearGen.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+$mnuClearGen.ForeColor = [System.Drawing.Color]::OrangeRed
+$mnuClearGen.Add_Click({ $Global:logGen.Clear() })
+$Global:logGen.ContextMenuStrip = $ctxGen
+
+# NOTA: La logica de los botones FIX LOGO SAMSUNG (btnsA2[2]) e INSTALAR MAGISK (btnsA2[4])
+
+#==========================================================================
 # LOGICA - TAB UTILIDADES GENERALES
 #==========================================================================
 
@@ -35,7 +118,7 @@ $btnsG1[0].Add_Click({
     try {
         GenLog ""
         GenLog "=============================================="
-        GenLog "  ORGANIZAR FIRMWARE - RNX TOOL PRO"
+        GenLog "  ORGANIZAR FIRMWARE - RNX TOOL PRO v2"
         GenLog "=============================================="
         GenLog "[~] Selecciona la carpeta con los firmwares..."
 
@@ -50,37 +133,161 @@ $btnsG1[0].Add_Click({
         GenLog "[+] Carpeta destino: $dest"
         GenLog ""
 
-        $files = Get-ChildItem $source -Recurse -File |
-                 Where-Object { $_.Extension -imatch "\.(zip|rar|tgz|gz|7z|img|tar|md5)$" -and
-                                $_.FullName -notlike "*\Organizados\*" }
+        # ---- FILTRO DE VINCULACION A CELULARES ----
+        # Solo se mueven archivos cuyo nombre contenga referencia a dispositivo movil
+        $vinculacionPattern = "imei|sn|serial|sm-|xt\d|redmi|poco|xiaomi|miui|samsung|galaxy|motorola|moto|oppo|vivo|realme|tecno|itel|huawei|honor|oneplus|pixel|iphone|nokia|lg |htc|sony|xperia|\d{15}"
+
+        # Cargar TODOS los archivos relevantes (firmware + partes NV/EFS)
+        $allFiles = Get-ChildItem $source -Recurse -File |
+                    Where-Object { $_.FullName -notlike "*\Organizados\*" }
+
+        # Extensiones de firmware movil estandar
+        $fwExts = "zip|rar|tgz|gz|7z|img|tar|md5|ffu|qcn|bin|lz4|ext4|erofs|sparse"
+
+        $files = $allFiles | Where-Object { $_.Extension -imatch "\.($fwExts)$" }
 
         if ($files.Count -eq 0) { GenLog "[!] No se encontraron archivos de firmware."; return }
-        GenLog "[+] $($files.Count) archivos encontrados."
+        GenLog "[+] $($files.Count) archivos candidatos."
         GenLog ""
 
-        $movidos = 0; $duplicados = 0
+        $movidos = 0; $duplicados = 0; $omitidos = 0
+        $procesados = [System.Collections.Generic.HashSet[string]]::new()
 
-        foreach ($file in $files) {
+        # ================================================================
+        # FASE 1: GRUPOS ESPECIALES - NV/EFS con correlacion horaria (+-5 min)
+        # ================================================================
+        GenLog "[FASE 1] Detectando grupos NV/EFS por correlacion horaria..."
+
+        # Mapear archivos NV/EFS por nombre base
+        $nvNames  = @("nvram","nvdata","protect1","protect2","efs","sec_efs","nvcfg","nvbk")
+        $nvFiles  = $allFiles | Where-Object {
+            $b = $_.BaseName.ToLower() -replace "\..*",""
+            $nvNames | Where-Object { $b -match $_ }
+        }
+
+        # Agrupar por ventana de tiempo de 5 minutos
+        $grupos = @{}
+        foreach ($nf in $nvFiles) {
+            $slot = [math]::Floor(($nf.LastWriteTime - [datetime]"2000-01-01").TotalMinutes / 5)
+            $key  = "NV_$slot"
+            if (-not $grupos[$key]) { $grupos[$key] = [System.Collections.Generic.List[object]]::new() }
+            $grupos[$key].Add($nf)
+        }
+
+        foreach ($key in $grupos.Keys) {
+            $grp = $grupos[$key]
+            if ($grp.Count -lt 2) { continue }  # necesita al menos nvram+nvdata
+
+            $nombres   = $grp | ForEach-Object { $_.BaseName.ToLower() -replace "\..*","" }
+            $tieneNv   = ($nombres | Where-Object { $_ -match "nvram|nvdata" }).Count -ge 1
+            if (-not $tieneNv) { continue }
+
+            $tieneEfs  = ($nombres | Where-Object { $_ -match "^efs$|sec_efs" }).Count -ge 1
+            $tieneProt = ($nombres | Where-Object { $_ -match "protect1|protect2" }).Count -ge 1
+
+            $ts = $grp[0].LastWriteTime.ToString("yyyyMMdd_HHmm")
+            $carpetaNombre = if ($tieneEfs) {
+                "EFS_Full_Backup_$ts"
+            } elseif ($tieneProt) {
+                "NV_Protect_Backup_$ts"
+            } else {
+                "NV_Backup_$ts"
+            }
+
+            $destGrupo = Join-Path $dest $carpetaNombre
+            New-Item $destGrupo -ItemType Directory -Force | Out-Null
+            GenLog "  [GRUPO] $carpetaNombre ($($grp.Count) archivos)"
+
+            foreach ($gf in $grp) {
+                if ($procesados.Contains($gf.FullName)) { continue }
+                $tgt = Join-Path $destGrupo $gf.Name
+                if (Test-Path $tgt) {
+                    $b2=$gf.BaseName; $e2=$gf.Extension; $v=2
+                    do { $tgt = Join-Path $destGrupo "${b2}_v${v}${e2}"; $v++ } while (Test-Path $tgt)
+                    $duplicados++
+                }
+                Move-Item $gf.FullName $tgt -Force
+                $procesados.Add($gf.FullName) | Out-Null
+                GenLog "    -> $($gf.Name)"
+                $movidos++
+            }
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+
+        # ================================================================
+        # FASE 2: ARCHIVOS ESPECIALES (.ffu, .qcn)
+        # ================================================================
+        GenLog ""
+        GenLog "[FASE 2] Detectando .ffu y .qcn..."
+
+        foreach ($file in ($files | Where-Object { -not $procesados.Contains($_.FullName) })) {
+            $ext = $file.Extension.ToLower()
+            $destEsp = $null
+
+            if ($ext -eq ".ffu") { $destEsp = Join-Path $dest "EMC_Firmware" }
+            elseif ($ext -eq ".qcn") { $destEsp = Join-Path $dest "QCN_File" }
+
+            if ($destEsp) {
+                New-Item $destEsp -ItemType Directory -Force | Out-Null
+                $tgt = Join-Path $destEsp $file.Name
+                if (Test-Path $tgt) {
+                    $b2=$file.BaseName; $e2=$file.Extension; $v=2
+                    do { $tgt = Join-Path $destEsp "${b2}_v${v}${e2}"; $v++ } while (Test-Path $tgt)
+                    $duplicados++
+                }
+                Move-Item $file.FullName $tgt -Force
+                $procesados.Add($file.FullName) | Out-Null
+                GenLog "  [$(($ext).ToUpper() -replace '.')] $($file.Name) -> $(Split-Path $destEsp -Leaf)"
+                $movidos++
+            }
+        }
+
+        # ================================================================
+        # FASE 3: FIRMWARE GENERAL - con filtro de vinculacion
+        # ================================================================
+        GenLog ""
+        GenLog "[FASE 3] Organizando firmware por marca/modelo..."
+
+        foreach ($file in ($files | Where-Object { -not $procesados.Contains($_.FullName) })) {
             $name = $file.Name.ToLower()
 
-            # Deteccion de marca
-            if     ($name -match "miui|redmi|poco|xiaomi|_rn|_mi[0-9]|_poco") { $brand = "Xiaomi" }
-            elseif ($name -match "sm-|samsung|galaxy") { $brand = "Samsung" }
-            elseif ($name -match "xt[0-9]|moto|motorola") { $brand = "Motorola" }
-            elseif ($name -match "oppo") { $brand = "Oppo" }
-            elseif ($name -match "vivo") { $brand = "Vivo" }
-            elseif ($name -match "realme") { $brand = "Realme" }
-            elseif ($name -match "tecno|camon|spark") { $brand = "Tecno" }
-            elseif ($name -match "itel") { $brand = "Itel" }
-            else   { $brand = "Otros" }
+            # Filtro de vinculacion: si no hay match a dispositivo movil, skip
+            if ($name -notmatch $vinculacionPattern) {
+                GenLog "  [SKIP] $($file.Name) - sin referencia a dispositivo movil"
+                $omitidos++
+                $procesados.Add($file.FullName) | Out-Null
+                continue
+            }
 
-            # Deteccion de modelo (heuristica)
+            # Deteccion de marca
+            if     ($name -match "miui|redmi|poco|xiaomi|_rn\d|_mi\d|_poco")  { $brand = "Xiaomi" }
+            elseif ($name -match "sm-|samsung|galaxy")                          { $brand = "Samsung" }
+            elseif ($name -match "xt\d|moto|motorola")                        { $brand = "Motorola" }
+            elseif ($name -match "oppo")                                         { $brand = "Oppo" }
+            elseif ($name -match "vivo")                                     { $brand = "Vivo" }
+            elseif ($name -match "realme")                                       { $brand = "Realme" }
+            elseif ($name -match "tecno|camon|spark")                            { $brand = "Tecno" }
+            elseif ($name -match "itel")                                     { $brand = "Itel" }
+            elseif ($name -match "huawei|honor")                                 { $brand = "Huawei" }
+            elseif ($name -match "oneplus")                                      { $brand = "OnePlus" }
+            elseif ($name -match "pixel")                                        { $brand = "Google" }
+            elseif ($name -match "iphone")                                       { $brand = "Apple" }
+            elseif ($name -match "nokia")                                    { $brand = "Nokia" }
+            elseif ($name -match "lg")                                       { $brand = "LG" }
+            elseif ($name -match "htc")                                      { $brand = "HTC" }
+            elseif ($name -match "sony|xperia")                                  { $brand = "Sony" }
+            else                                                                  { $brand = "Otros" }
+
+            # Deteccion de modelo (heuristica ampliada)
             $modelo = ""
-            if ($name -match "(sm-[a-z0-9]{4,7})") { $modelo = $Matches[1].ToUpper() }
-            elseif ($name -match "(xt[0-9]{3,5})") { $modelo = $Matches[1].ToUpper() }
-            elseif ($name -match "miui_([a-z0-9_]+?)_v") { $modelo = $Matches[1] -replace "_"," " }
-            elseif ($name -match "_(rn[0-9]+[a-z]?)") { $modelo = "Redmi Note $($Matches[1] -replace 'rn','')" }
-            elseif ($name -match "_(m[0-9]+[a-z]?)") { $modelo = $Matches[1].ToUpper() }
+            if     ($name -match "(sm-[a-z0-9]{4,8})")    { $modelo = $Matches[1].ToUpper() }
+            elseif ($name -match "(xt\d{3,5}[a-z]?)")     { $modelo = $Matches[1].ToUpper() }
+            elseif ($name -match "miui_([a-z0-9_]+?)_v")  { $modelo = ($Matches[1] -replace "_"," ").Trim() }
+            elseif ($name -match "_(rn\d+[a-z]?)[_\.]")   { $modelo = "Redmi Note $($Matches[1] -replace 'rn','')" }
+            elseif ($name -match "_(m\d+[a-z]?)[_\.]")    { $modelo = $Matches[1].ToUpper() }
+            elseif ($name -match "_(cph\d+)[_\.]")        { $modelo = $Matches[1].ToUpper() }
+            elseif ($name -match "_(v\d{4}[a-z]?)[_\.]")  { $modelo = $Matches[1].ToUpper() }
+            elseif ($name -match "(pixel[ _]\d[a-z ]*)")   { $modelo = ($Matches[1] -replace "[ _]"," ").Trim() }
 
             $destPath = if ($modelo) {
                 Join-Path $dest (Join-Path $brand $modelo)
@@ -90,17 +297,16 @@ $btnsG1[0].Add_Click({
             New-Item $destPath -ItemType Directory -Force | Out-Null
 
             $target = Join-Path $destPath $file.Name
-            # Evitar sobrescritura
             if (Test-Path $target) {
                 $base = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
-                $ext  = $file.Extension
-                $v = 2
-                do { $target = Join-Path $destPath "${base}_v${v}${ext}"; $v++ } while (Test-Path $target)
+                $ext2 = $file.Extension; $v = 2
+                do { $target = Join-Path $destPath "${base}_v${v}${ext2}"; $v++ } while (Test-Path $target)
                 $duplicados++
                 GenLog "  [DUP] $($file.Name) -> $([System.IO.Path]::GetFileName($target))"
             }
 
             Move-Item $file.FullName $target -Force
+            $procesados.Add($file.FullName) | Out-Null
             $rel = "$brand$(if($modelo){`"/$modelo`"})"
             GenLog "  [OK] $($file.Name) -> $rel"
             $movidos++
@@ -113,11 +319,12 @@ $btnsG1[0].Add_Click({
         GenLog "=============================================="
         GenLog "  Movidos     : $movidos"
         GenLog "  Duplicados  : $duplicados (renombrados _v2, _v3...)"
+        GenLog "  Omitidos    : $omitidos (sin vinculacion a celular)"
         GenLog "  Destino     : $dest"
         GenLog "=============================================="
 
         $abrir = [System.Windows.Forms.MessageBox]::Show(
-            "Firmware organizado correctamente.`n$movidos archivos movidos.`n`nAbrir carpeta destino?",
+            "Firmware organizado.`n`nMovidos  : $movidos`nOmitidos : $omitidos`n`nAbrir carpeta destino?",
             "LISTO", "YesNo", "Information")
         if ($abrir -eq "Yes") { Start-Process explorer.exe $dest }
 
@@ -193,7 +400,7 @@ $btnsG1[2].Add_Click({
     try {
         GenLog ""
         GenLog "=============================================="
-        GenLog "  EXTRAER FIRMWARE - RNX TOOL PRO"
+        GenLog "  EXTRAER FIRMWARE - RNX TOOL PRO v2"
         GenLog "=============================================="
 
         $fd = New-Object System.Windows.Forms.OpenFileDialog
@@ -212,7 +419,7 @@ $btnsG1[2].Add_Click({
 
         GenLog "[+] Archivo : $archName ($archSz MB)"
         GenLog "[+] Destino : $dest"
-        GenLog "[~] Extrayendo..."
+        GenLog "[~] Preparando extraccion..."
 
         # Buscar 7z
         $7z = $null
@@ -222,41 +429,135 @@ $btnsG1[2].Add_Click({
             "C:\Program Files (x86)\7-Zip\7z.exe"
         )) { if (Test-Path $c) { $7z = $c; break } }
 
-        $isTar = ($ext -match "\.(tar|md5|tgz|gz)$") -or ($archPath -imatch "\.tar\.md5$")
-        $isZip = ($ext -eq ".zip")
+        $isTar   = ($ext -match "\.(tar|md5|tgz|gz)$") -or ($archPath -imatch "\.tar\.md5$")
+        $isZip   = ($ext -eq ".zip")
         $is7zRar = ($ext -match "\.(7z|rar)$")
 
-        if ($isZip -and -not $7z) {
-            # Usar PowerShell nativo para ZIP
-            Add-Type -AssemblyName System.IO.Compression.FileSystem
-            [System.IO.Compression.ZipFile]::ExtractToDirectory($archPath, $dest)
-            GenLog "[OK] ZIP extraido (PowerShell nativo)"
-        } elseif ($7z) {
-            $outLog = & $7z x "$archPath" "-o$dest" -y 2>&1
-            $outLog | ForEach-Object { $l="$_".Trim(); if($l -and $l.Length -lt 120) { GenLog "  $l" } }
-            GenLog "[OK] Extraccion completada con 7z"
+        # ---- Ventana de progreso ----
+        $ui = Show-ExtractProgress $archName
+        $ui.LblStatus.Text = "Iniciando..."; [System.Windows.Forms.Application]::DoEvents()
 
-            # Manejo .tgz / tar interno
-            if ($isTar) {
-                $innerTar = Get-ChildItem $dest -Recurse -File |
-                            Where-Object { $_.Extension -imatch "\.(tar)$" } | Select-Object -First 1
-                if ($innerTar) {
-                    GenLog "[~] TAR interno detectado: $($innerTar.Name) - extrayendo..."
-                    $destInner = Join-Path $dest "imgs"
-                    New-Item $destInner -ItemType Directory -Force | Out-Null
-                    & $7z x "$($innerTar.FullName)" "-o$destInner" -y 2>&1 | Out-Null
-                    GenLog "[OK] TAR interno extraido en: imgs/"
+        try {
+            if ($isZip -and -not $7z) {
+                # ZIP nativo con progreso por entrada
+                $ui.LblStatus.Text = "Extrayendo ZIP (nativo)..."
+                $ui.Bar.Value = 5; [System.Windows.Forms.Application]::DoEvents()
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                $zip   = [System.IO.Compression.ZipFile]::OpenRead($archPath)
+                $total = $zip.Entries.Count; $done = 0
+                foreach ($entry in $zip.Entries) {
+                    $outPath = [System.IO.Path]::Combine($dest, $entry.FullName)
+                    $outDir  = [System.IO.Path]::GetDirectoryName($outPath)
+                    if (-not (Test-Path $outDir)) { New-Item $outDir -ItemType Directory -Force | Out-Null }
+                    if (-not $entry.FullName.EndsWith("/")) {
+                        [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $outPath, $true)
+                    }
+                    $done++
+                    $pct = [int](($done / $total) * 95) + 4
+                    $ui.Bar.Value   = [Math]::Min($pct, 98)
+                    $ui.LblPct.Text = "$pct%"
+                    $ui.LblFile.Text = $entry.Name
+                    $ui.LblStatus.Text = "[$done/$total] $($entry.Name)"
+                    if ($done % 4 -eq 0) { [System.Windows.Forms.Application]::DoEvents() }
+                }
+                $zip.Dispose()
+                $ui.Bar.Value = 100; $ui.LblPct.Text = "100%"
+                [System.Windows.Forms.Application]::DoEvents()
+                GenLog "[OK] ZIP extraido (PowerShell nativo)"
+
+            } elseif ($7z) {
+                # 7z con progreso via archivo de log temporal (evita freeze total de UI)
+                $ui.LblStatus.Text = "Extrayendo con 7z ($ext)..."
+                $ui.Bar.Value = 5; [System.Windows.Forms.Application]::DoEvents()
+
+                $logFile = [System.IO.Path]::GetTempFileName()
+                try {
+                    # Lanzar 7z redirigiendo TODO a archivo de log (sin pipes que bloquean)
+                    $psi = New-Object System.Diagnostics.ProcessStartInfo
+                    $psi.FileName    = $7z
+                    $psi.Arguments   = "x `"$archPath`" `"-o$dest`" -y -bsp1 -bso1 -bse1"
+                    $psi.UseShellExecute        = $false
+                    $psi.RedirectStandardOutput = $false
+                    $psi.RedirectStandardError  = $false
+                    $psi.CreateNoWindow         = $true
+                    # Redirigir stdout al archivo via cmd /c
+                    $psi.FileName  = "cmd.exe"
+                    $psi.Arguments = "/c `"`"$7z`" x `"$archPath`" `"-o$dest`" -y -bsp1 -bso1 -bse1 > `"$logFile`" 2>&1`""
+
+                    $proc = [System.Diagnostics.Process]::Start($psi)
+                    $lastPos = 0
+                    while (-not $proc.HasExited) {
+                        Start-Sleep -Milliseconds 120
+                        [System.Windows.Forms.Application]::DoEvents()
+                        # Leer lineas nuevas del log
+                        try {
+                            $fs = [System.IO.File]::Open($logFile, [System.IO.FileMode]::Open,
+                                  [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                            $fs.Seek($lastPos, [System.IO.SeekOrigin]::Begin) | Out-Null
+                            $sr = New-Object System.IO.StreamReader($fs)
+                            $chunk = $sr.ReadToEnd()
+                            $lastPos = $fs.Position
+                            $sr.Dispose(); $fs.Dispose()
+                            foreach ($l in ($chunk -split "`n")) {
+                                $l = $l.Trim()
+                                if ($l -match "(\d+)%") {
+                                    $pct = [int]$Matches[1]
+                                    $ui.Bar.Value   = [Math]::Min(5 + [int]($pct * 0.93), 98)
+                                    $ui.LblPct.Text = "$pct%"
+                                }
+                                if ($l -match "\- (.+)$") {
+                                    $ui.LblFile.Text   = $Matches[1].Trim()
+                                    $ui.LblStatus.Text = $Matches[1].Trim()
+                                }
+                            }
+                        } catch {}
+                    }
+                    $proc.WaitForExit()
+                    $ui.Bar.Value = 100; $ui.LblPct.Text = "100%"
+                    [System.Windows.Forms.Application]::DoEvents()
+
+                    if ($proc.ExitCode -ne 0) { GenLog "[!] 7z salio con codigo $($proc.ExitCode)" }
+                    else { GenLog "[OK] Extraccion completada con 7z" }
+                } finally {
+                    try { Remove-Item $logFile -Force -EA SilentlyContinue } catch {}
+                }
+
+                # Manejo TAR interno (tgz / tar.md5)
+                if ($isTar) {
+                    $innerTar = Get-ChildItem $dest -Recurse -File |
+                                Where-Object { $_.Extension -imatch "\.(tar)$" } | Select-Object -First 1
+                    if ($innerTar) {
+                        GenLog "[~] TAR interno: $($innerTar.Name) - extrayendo imgs/..."
+                        $ui.LblStatus.Text = "TAR interno: $($innerTar.Name)"
+                        $ui.Bar.Value = 50; [System.Windows.Forms.Application]::DoEvents()
+                        $destInner = Join-Path $dest "imgs"
+                        New-Item $destInner -ItemType Directory -Force | Out-Null
+                        & $7z x "$($innerTar.FullName)" "-o$destInner" -y 2>&1 | Out-Null
+                        $ui.Bar.Value = 100; $ui.LblPct.Text = "100%"
+                        [System.Windows.Forms.Application]::DoEvents()
+                        GenLog "[OK] TAR interno extraido en: imgs/"
+                    }
+                }
+
+            } else {
+                # Fallback: tar nativo
+                $ui.LblStatus.Text = "Extrayendo con tar nativo..."
+                $ui.Bar.Value = 10; [System.Windows.Forms.Application]::DoEvents()
+                if (Get-Command tar -ErrorAction SilentlyContinue) {
+                    & tar -xf "$archPath" -C "$dest" 2>&1 | Out-Null
+                    $ui.Bar.Value = 100; $ui.LblPct.Text = "100%"
+                    [System.Windows.Forms.Application]::DoEvents()
+                    GenLog "[OK] Extraido con tar nativo"
+                } else {
+                    GenLog "[!] No se encontro 7z.exe ni tar."
+                    GenLog "[~] Coloca 7z.exe en .\tools\ o instala 7-Zip"
+                    return
                 }
             }
-        } else {
-            # Fallback: tar nativo de Windows
-            if (Get-Command tar -ErrorAction SilentlyContinue) {
-                & tar -xf "$archPath" -C "$dest" 2>&1 | Out-Null
-                GenLog "[OK] Extraido con tar nativo"
-            } else {
-                GenLog "[!] No se encontro 7z.exe ni tar."
-                GenLog "[~] Coloca 7z.exe en .\tools\ o instala 7-Zip"
-                return
+        } finally {
+            Start-Sleep -Milliseconds 400
+            if ($ui -and $ui.Win -and -not $ui.Win.IsDisposed) {
+                try { $ui.Win.Close() } catch {}
             }
         }
 
@@ -274,7 +575,6 @@ $btnsG1[2].Add_Click({
     } catch { GenLog "[!] Error: $_" }
     finally  { $btn.Enabled=$true; $btn.Text="EXTRAER FIRMWARE" }
 })
-
 # ---- [3] VERIFICAR CHECKSUM ----
 $btnsG1[3].Add_Click({
     $btn = $btnsG1[3]; $btn.Enabled=$false; $btn.Text="CALCULANDO..."
@@ -1202,80 +1502,152 @@ $btnPersist.Add_Click({
     $Global:_persistTimer.Start()
 })
 
-#==========================================================================
-# REPAIR NVDATA (btnsG2[4])
-# Repara la particion NVDATA de Mediatek usando ADB root
+#=================================================================# HABILITAR MISC MOTOROLA (btnsG2[4])
+# Parcha misc.bin para habilitar opciones de recovery en Motorola
+# Inserta los bytes de boot-recovery + wipe_data + wipe_cache en offset 0x00
 #==========================================================================
 $btnRepairNV.Add_Click({
     $btn = $btnRepairNV
-    $btn.Enabled = $false; $btn.Text = "REPARANDO..."
+    $btn.Enabled = $false; $btn.Text = "PARCHEANDO..."
     [System.Windows.Forms.Application]::DoEvents()
     try {
         GenLog ""
         GenLog "[*] =========================================="
-        GenLog "[*] REPAIR NVDATA - RNX TOOL PRO"
-        GenLog "[*] Reparar particion NVDATA (MTK)"
+        GenLog "[*] HABILITAR MISC MOTOROLA - RNX TOOL PRO"
+        GenLog "[*] Parcha misc.bin para activar recovery"
         GenLog "[*] =========================================="
         GenLog ""
-        GenLog "[~] Verificando ADB y root..."
-        if (-not (Check-ADB)) { GenLog "[!] No hay equipo ADB."; return }
-        $rootChk = (& adb shell "su -c id" 2>$null) -join ""
-        if ($rootChk -notmatch "uid=0") {
-            GenLog "[!] ROOT no detectado. Esta operacion requiere root."
+
+        # ---- Selector de archivo ----
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.Title  = "Selecciona el archivo misc.bin a parchear"
+        $fd.Filter = "misc.bin|misc.bin;misc*.bin|Binarios (*.bin)|*.bin|Todos|*.*"
+        if ($fd.ShowDialog() -ne "OK") { GenLog "[~] Cancelado."; return }
+
+        $miscPath = $fd.FileName
+        $miscName = [System.IO.Path]::GetFileName($miscPath)
+        $miscDir  = [System.IO.Path]::GetDirectoryName($miscPath)
+        $miscSz   = (Get-Item $miscPath).Length
+        GenLog "[+] Archivo : $miscPath"
+        GenLog "[+] Tamano  : $miscSz bytes"
+        GenLog ""
+
+        # ---- Validacion minima de tamano (misc.bin Motorola tipicamente 1MB o 4MB) ----
+        if ($miscSz -lt 160) {
+            GenLog "[!] Archivo demasiado pequeno ($miscSz bytes). Verifica que sea misc.bin correcto."
             return
         }
-        GenLog "[+] Root: OK"
-        $nvPart = ""
-        foreach ($n in @("nvdata","NVDATA","userdata","nvcfg")) {
-            $found = (& adb shell "su -c 'ls /dev/block/by-name/$n 2>/dev/null'" 2>$null) -join ""
-            if ($found -imatch $n) { $nvPart = $n; break }
+
+        # ---- Leer archivo ----
+        $bytes = [System.IO.File]::ReadAllBytes($miscPath)
+        GenLog "[~] Archivo leido OK ($($bytes.Length) bytes)"
+
+        # ---- SHA256 original ----
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $hashOrig = [BitConverter]::ToString($sha256.ComputeHash($bytes)) -replace "-",""
+        GenLog "[+] SHA256 original : $hashOrig"
+        GenLog ""
+
+        # ---- Verificar si ya esta parcheado ----
+        # Los primeros 13 bytes deben ser "boot-recovery" = 62 6F 6F 74 2D 72 65 63 6F 76 65 72 79
+        $bootRecovery = @(0x62,0x6F,0x6F,0x74,0x2D,0x72,0x65,0x63,0x6F,0x76,0x65,0x72,0x79)
+        $yaParcheado = $true
+        for ($ci=0; $ci -lt $bootRecovery.Count; $ci++) {
+            if ($bytes[$ci] -ne $bootRecovery[$ci]) { $yaParcheado = $false; break }
         }
-        if (-not $nvPart) {
-            $parts = (& adb shell "su -c 'ls /dev/block/by-name/ 2>/dev/null'" 2>$null) -join " "
-            $nvPart = ($parts -split "\s+" | Where-Object { $_ -imatch "^nv" } | Select-Object -First 1)
-            if (-not $nvPart) {
-                GenLog "[!] Particion NVDATA no encontrada."
-                GenLog "[~] El dispositivo puede no ser MTK o no tener particion NVDATA."
-                return
-            }
+        if ($yaParcheado) {
+            GenLog "[~] El archivo YA contiene el patron boot-recovery."
+            $overwrite = [System.Windows.Forms.MessageBox]::Show(
+                "misc.bin ya parece estar parcheado (contiene 'boot-recovery' al inicio).`n`nSobrescribir de todas formas?",
+                "Ya parcheado", "YesNo", "Warning")
+            if ($overwrite -ne "Yes") { GenLog "[~] Cancelado."; return }
         }
-        GenLog "[+] Particion encontrada: /dev/block/by-name/$nvPart"
-        GenLog "[~] Verificando integridad del sistema de archivos..."
-        $stamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-        $bakDir = [System.IO.Path]::Combine($script:SCRIPT_ROOT, "BACKUPS", "NVDATA", $stamp)
+
+        # ---- Backup con SHA256 ----
+        $stamp  = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+        $bakDir = Join-Path (Join-Path $script:SCRIPT_ROOT "BACKUPS") "MISC_MOTOROLA\$stamp"
         New-Item $bakDir -ItemType Directory -Force | Out-Null
-        $bakPath = Join-Path $bakDir "nvdata_backup.img"
-        GenLog "[~] Creando backup de NVDATA..."
-        & adb shell "su -c 'dd if=/dev/block/by-name/$nvPart of=/sdcard/nvdata_rnx.img bs=4096'" 2>$null | Out-Null
-        & adb pull /sdcard/nvdata_rnx.img $bakPath 2>$null | Out-Null
-        & adb shell "su -c 'rm -f /sdcard/nvdata_rnx.img'" 2>$null | Out-Null
-        if (Test-Path $bakPath) {
-            $sz = [math]::Round((Get-Item $bakPath).Length / 1MB, 2)
-            GenLog "[+] Backup guardado: $bakPath ($sz MB)"
-        } else {
-            GenLog "[~] No se pudo crear backup - continuando de todas formas..."
-        }
+        $bakPath = Join-Path $bakDir ($miscName + ".bak")
+        [System.IO.File]::WriteAllBytes($bakPath, $bytes)
+        $hashBak = [BitConverter]::ToString($sha256.ComputeHash($bytes)) -replace "-",""
+        Set-Content (Join-Path $bakDir ($miscName + ".bak.sha256.txt")) $hashBak
+        GenLog "[+] Backup guardado : $bakPath"
+        GenLog "[+] SHA256 backup   : $hashBak"
         GenLog ""
-        GenLog "[~] Ejecutando reparacion NVDATA..."
-        $fsckResult = (& adb shell "su -c 'fsck.ext4 -y /dev/block/by-name/$nvPart 2>&1'" 2>$null) -join "`n"
-        if ($fsckResult) {
-            foreach ($fl in ($fsckResult -split "`n")) { $fl = $fl.Trim(); if ($fl) { GenLog "  $fl" } }
-        }
-        $cleanCmds = @(
-            "rm -f /data/nvram/md/NVRAM/NVD_IMEI/BT_Addr",
-            "rm -f /data/nvram/APCFG/APRDCL/*",
-            "chmod 770 /data/nvram"
-        )
-        foreach ($cmd in $cleanCmds) {
-            & adb shell "su -c '$cmd'" 2>$null | Out-Null
-        }
-        GenLog "[+] Limpieza de flags NVRAM completada"
+
+        # ---- Construir payload (160 bytes = 3 bloques de 64 bytes) ----
+        # Bloque 1 (offset 0x00, 64 bytes): "boot-recovery" + zeros hasta completar 64
+        # Bloque 2 (offset 0x40, 64 bytes): "recovery\n--wipe_data" + zeros hasta 64
+        # Bloque 3 (offset 0x80, 32 bytes): "recovery\n--wipe_cache" + zeros hasta 32
+        # (segun imagen HxD: total 0xA0 = 160 bytes modificados)
+
+        $payload = [byte[]]::new(160)  # 160 bytes, todos 0x00 por defecto
+
+        # Bloque 1: "boot-recovery" = 13 bytes en ASCII
+        $str1 = [System.Text.Encoding]::ASCII.GetBytes("boot-recovery")
+        [Array]::Copy($str1, 0, $payload, 0x00, $str1.Length)
+
+        # Bloque 2 (offset 0x40 = 64): "recovery\n--wipe_data" = 20 bytes
+        $str2 = [System.Text.Encoding]::ASCII.GetBytes("recovery`n--wipe_data")
+        [Array]::Copy($str2, 0, $payload, 0x40, $str2.Length)
+
+        # Bloque 3 (offset 0x80 = 128): "recovery\n--wipe_cache" = 21 bytes
+        $str3 = [System.Text.Encoding]::ASCII.GetBytes("recovery`n--wipe_cache")
+        [Array]::Copy($str3, 0, $payload, 0x80, $str3.Length)
+
+        GenLog "[~] Payload de 160 bytes construido:"
+        GenLog "    0x00: boot-recovery ($($str1.Length) bytes)"
+        GenLog "    0x40: recovery + --wipe_data ($($str2.Length) bytes)"
+        GenLog "    0x80: recovery + --wipe_cache ($($str3.Length) bytes)"
         GenLog ""
-        GenLog "[OK] REPAIR NVDATA completado."
-        GenLog "[~] Reinicia el dispositivo para aplicar los cambios."
-        GenLog "[~] Backup guardado en: $bakDir"
-    } catch { GenLog "[!] Error inesperado: $_" }
-    finally { $btn.Enabled = $true; $btn.Text = "REPAIR NVDATA" }
+
+        # ---- Aplicar payload al archivo (sobreescribir bytes 0x00 a 0x9F) ----
+        [Array]::Copy($payload, 0, $bytes, 0, $payload.Length)
+
+        # ---- SHA256 resultado ----
+        $hashNew = [BitConverter]::ToString($sha256.ComputeHash($bytes)) -replace "-",""
+        GenLog "[+] SHA256 parcheado: $hashNew"
+
+        # ---- Guardar archivo parcheado ----
+        $outName  = [System.IO.Path]::GetFileNameWithoutExtension($miscName) + "_patched.bin"
+        $outPath  = Join-Path $miscDir $outName
+        [System.IO.File]::WriteAllBytes($outPath, $bytes)
+        Set-Content (Join-Path $miscDir ($outName + ".sha256.txt")) $hashNew
+
+        # ---- Guardar meta ----
+        $meta = @"
+RNX TOOL PRO - MISC MOTOROLA PATCH
+Fecha       : $(Get-Date -Format 'dd/MM/yyyy HH:mm:ss')
+Original    : $miscPath
+Backup      : $bakPath
+Parcheado   : $outPath
+SHA256 orig : $hashOrig
+SHA256 new  : $hashNew
+Payload     : 160 bytes (boot-recovery + recovery/wipe_data + recovery/wipe_cache)
+"@
+        Set-Content (Join-Path $bakDir "patch_info.txt") $meta
+
+        GenLog ""
+        GenLog "[OK] =========================================="
+        GenLog "[OK] MISC.BIN PARCHEADO CORRECTAMENTE"
+        GenLog "[OK] =========================================="
+        GenLog "     Original : $miscName"
+        GenLog "     Parcheado: $outName"
+        GenLog "     Backup   : $bakPath"
+        GenLog ""
+        GenLog "[~] Proximos pasos:"
+        GenLog "    1. Flashea $outName a la particion misc via EDL o fastboot"
+        GenLog "    2. fastboot flash misc $outName"
+        GenLog "    3. O usa EDL -> Flashear Particion -> misc"
+        GenLog ""
+
+        $abrir = [System.Windows.Forms.MessageBox]::Show(
+            "misc.bin parcheado correctamente.`n`nArchivo: $outName`nBackup: $bakPath`n`nAbrir carpeta?",
+            "MISC PARCHEADO", "YesNo", "Information")
+        if ($abrir -eq "Yes") { Start-Process explorer.exe $miscDir }
+
+    } catch { GenLog "[!] Error: $_" }
+    finally { $btn.Enabled = $true; $btn.Text = "HABILITAR MISC MOTOROLA" }
 })
 
 #==========================================================================
@@ -1353,33 +1725,4 @@ $btnFlashPart.Add_Click({
 })
 
 #==========================================================================
-# WINUSB DRIVER BUTTON HANDLER
-#==========================================================================
-$btnWinUSB.Add_Click({
-    $btnWinUSB.Enabled = $false
-    $btnWinUSB.Text = "INSTALANDO..."
-    [System.Windows.Forms.Application]::DoEvents()
-    $Global:logOdin.Clear()
-    $cpuNow = Get-SamsungCPUInfo
-    if ($cpuNow.MODE -ne "DOWNLOAD_MODE") {
-        OdinLog "[!] No hay dispositivo en Download Mode"
-        OdinLog "[~] Conecta el equipo en Download Mode primero"
-        OdinLog "    Vol- + Power o adb reboot download"
-        $btnWinUSB.Enabled = $true
-        $btnWinUSB.Text = "INSTALAR DRIVER WINUSB"
-        return
-    }
-    $vid    = $cpuNow.VID
-    $usbpid = $cpuNow.USBPID
-    $name   = $cpuNow.USB_NAME
-    $ok = Install-WinUSBDriver -vid $vid -usbpid $usbpid -friendlyName $name
-    if ($ok) {
-        $btnWinUSB.ForeColor = [System.Drawing.Color]::Lime
-        $btnWinUSB.Text = "DRIVER OK - RECONECTA"
-        $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  WinUSB instalado  |  Reconecta el equipo"
-    } else {
-        $btnWinUSB.ForeColor = [System.Drawing.Color]::Red
-        $btnWinUSB.Text = "ERROR - VER LOG"
-    }
-    $btnWinUSB.Enabled = $true
-})
+# NOTE: btnWinUSB handler removed (Samsung tab replaced)

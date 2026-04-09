@@ -99,6 +99,7 @@ function Get-DeepDeviceStatus {
                             $Global:lblChip.Text     = "CHIPSET     : $($res.chip)"
                             $Global:lblRoot.Text     = "ROOT        : $($res.root)"
                             $Global:lblRoot.ForeColor= if ($res.root -eq "SI") {[System.Drawing.Color]::Lime} else {[System.Drawing.Color]::Red}
+                            if ($res.rootChecked) { $script:CACHED_ROOT = $res.root }
                             $Global:lblModo.Text     = "MODO        : ADB"
                             $Global:lblModo.ForeColor= [System.Drawing.Color]::Cyan
                             $Global:lblFRP.Text      = "FRP         : $($res.frp)"
@@ -110,6 +111,7 @@ function Get-DeepDeviceStatus {
                     } elseif ($script:LAST_SERIAL -ne "") {
                         # Antes habia equipo, ahora no responde -> desconectado
                         $script:LAST_SERIAL = ""
+$script:CACHED_ROOT  = "NO"
                         $Global:lblADB.Text      = "ADB         : DESCONECTADO"
                         $Global:lblADB.ForeColor = [System.Drawing.Color]::Orange
                         foreach ($l in @($Global:lblModel,$Global:lblDisp,$Global:lblCPU,
@@ -131,7 +133,9 @@ function Get-DeepDeviceStatus {
 
     # --- Lanzar nuevo Job ADB en background (no bloquea la UI) ---
     $script:ADB_JOB_RUNNING = $true
+    # Pass last known serial and cached root to avoid su popup on every tick
     $script:ADB_JOB = Start-Job -ScriptBlock {
+        param($lastSerial, $cachedRoot)
         # Funcion limpieza dentro del job
         function CL($raw) {
             if (-not $raw) { return "" }
@@ -146,11 +150,11 @@ function Get-DeepDeviceStatus {
         $devList = (& adb devices 2>$null) -join "`n"
         $hasDevice = $devList -match "`tdevice"
         if (-not $hasDevice) {
-            return @{serial=""; mfr=""; model=""; cpu=""; chip=""; root="NO"; frp=""; storage=""}
+            return @{serial=""; mfr=""; model=""; cpu=""; chip=""; root=$cachedRoot; frp=""; storage=""; rootChecked=$false}
         }
 
         $s   = CL (& adb shell getprop ro.serialno           2>$null)
-        if (-not $s) { return @{serial=""; mfr=""; model=""; cpu=""; chip=""; root="NO"; frp=""; storage=""} }
+        if (-not $s) { return @{serial=""; mfr=""; model=""; cpu=""; chip=""; root=$cachedRoot; frp=""; storage=""; rootChecked=$false} }
 
         $mfr = CL (& adb shell getprop ro.product.manufacturer 2>$null)
         $mdl = CL (& adb shell getprop ro.product.model        2>$null)
@@ -159,7 +163,14 @@ function Get-DeepDeviceStatus {
         $plt = CL (& adb shell getprop ro.board.platform       2>$null)
         $soc = CL (& adb shell getprop ro.soc.model            2>$null)
         $frp = CL (& adb shell getprop ro.frp.pst              2>$null)
-        $rid = CL (& adb shell "su -c id"                      2>$null)
+        # Root check ONLY when serial changed - avoids su popup every 2.5s on rooted devices
+        $rid = ""; $rootChecked = $false
+        if ($s -ne $lastSerial) {
+            $rid = CL (& adb shell "su -c id" 2>$null)
+            $rootChecked = $true
+        } else {
+            $rid = $cachedRoot  # reuse cached value, no popup
+        }
 
         # Deteccion de storage multi-señal (solo /sys/class/ufs falla en muchos UFS)
         # Señal 1: nodo kernel UFS
@@ -194,17 +205,22 @@ function Get-DeepDeviceStatus {
                    elseif ($cpuName -match "EXYNOS") { "EXYNOS" }
                    else { "QUALCOMM" }
 
+        $rootStr = if ($rootChecked) {
+            if ($rid -match "uid=0") { "SI" } else { "NO" }
+        } else { $cachedRoot }
+
         return @{
-            serial  = $s
-            mfr     = $mfr.ToUpper()
-            model   = $model
-            cpu     = $cpuName
-            chip    = $chip
-            root    = if ($rid -match "uid=0") { "SI" } else { "NO" }
-            frp     = if ($frp) { "PRESENT" } else { "NOT SET" }
-            storage = $storageStr
+            serial      = $s
+            mfr         = $mfr.ToUpper()
+            model       = $model
+            cpu         = $cpuName
+            chip        = $chip
+            root        = $rootStr
+            frp         = if ($frp) { "PRESENT" } else { "NOT SET" }
+            storage     = $storageStr
+            rootChecked = $rootChecked
         }
-    }
+    } -ArgumentList $script:LAST_SERIAL, $script:CACHED_ROOT
 }
 
 

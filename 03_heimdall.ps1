@@ -1,19 +1,18 @@
-
-
 #==========================================================================
-# TAB 1: SAMSUNG FLASHER
+# TAB 1: CONTROL Y HERRAMIENTAS
 #==========================================================================
-$tabOdin           = New-Object Windows.Forms.TabPage
-$tabOdin.Text      = "SAMSUNG FLASHER"
-$tabOdin.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
-$tabs.TabPages.Add($tabOdin)
+$tabCtrl           = New-Object Windows.Forms.TabPage
+$tabCtrl.Text      = "CONTROL Y HERRAMIENTAS"
+$tabCtrl.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+$tabs.TabPages.Add($tabCtrl)
+$tabOdin = $tabCtrl  # alias para compatibilidad
 
 $script:BL_FILE  = ""; $script:AP_FILE  = ""; $script:CP_FILE  = ""
 $script:CSC_FILE = ""; $script:PIT_FILE = ""; $script:AP_PARTS = @()
 $script:BL_IMGS  = @(); $script:AP_IMGS  = @()
 $script:CP_IMGS  = @(); $script:CSC_IMGS = @()
 
-# LOG HELPERS — definidos en 09_logger.ps1 (OdinLog, AdbLog, GenLog, FbLog)
+# LOG HELPERS - definidos en 09_logger.ps1 (OdinLog, AdbLog, GenLog, FbLog)
 
 #==========================================================================
 # MOTORES HEIMDALL  (3 versiones)
@@ -357,4 +356,3 @@ function Get-FirmwareAutoType($file) {
     if ($name -match "\.PIT$") { return "PIT" }
     return "UNKNOWN"
 }
-
