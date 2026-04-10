@@ -86,7 +86,7 @@ $grpC1 = New-GBox $tabCtrl "LANZADORES"          $CX $CY1 $CGW $CGH1 "Yellow"
 $grpC2 = New-GBox $tabCtrl "DIAGNOSTICO ADB"     $CX $CY2 $CGW $CGH2 "Cyan"
 $grpC3 = New-GBox $tabCtrl "SISTEMA / PC"        $CX $CY3 $CGW $CGH3 "Orange"
 
-$CL1=@("ODIN3","HxD HEX EDITOR","ADB TOOLS FOLDER","USB DRIVERS")
+$CL1=@("ODIN3","HxD HEX EDITOR","QFIL","USB DRIVERS")
 $CL2=@("TEST PANTALLA","INFO BATERIA","ALMACENAMIENTO","APPS INSTALADAS")
 $CL3=@("ADMIN TAREAS","ADMIN DISPOSITIVOS","DESACTIVAR DEFENDER","REINICIAR ADB","MONITOR PC","LIMPIEZA TEMP PC")
 
@@ -134,75 +134,71 @@ $btnsC1[0].Add_Click({
     [System.Windows.Forms.Application]::DoEvents()
     CtrlLog ""
     CtrlLog "=== ODIN3 LAUNCHER ==="
-
-    $odinZip = Join-Path $script:TOOLS_DIR "Odin3.zip"
-    if (Test-Path $odinZip) {
-        CtrlLog "[+] Odin3.zip encontrado en tools\"
-        CtrlLog "[~] Extrayendo a carpeta temporal limpia..."
-        try {
+    try {
+        $zipPath = Join-Path $script:TOOLS_DIR "Odin3.zip"
+        if (-not (Test-Path $zipPath)) {
+            CtrlLog "[!] No se encontro Odin3.zip en: $($script:TOOLS_DIR)"
+            CtrlLog "[~] Coloca Odin3.zip (con Odin3.exe y Odin3.ini dentro) en tools\"
+            [System.Windows.Forms.MessageBox]::Show(
+                "No se encontro Odin3.zip`n`nColoca Odin3.zip en:`n$($script:TOOLS_DIR)`n`nEl ZIP debe contener Odin3.exe y Odin3.ini",
+                "Odin no encontrado","OK","Warning") | Out-Null
+        } else {
+            CtrlLog "[+] Odin3.zip encontrado en tools\"
+            CtrlLog "[~] Extrayendo a carpeta temporal limpia..."
             $tempDir = Join-Path $env:TEMP ("Odin_" + [guid]::NewGuid().ToString())
             New-Item -ItemType Directory -Path $tempDir | Out-Null
-            Expand-Archive -Path $odinZip -DestinationPath $tempDir -Force
-            $odinExeItem = Get-ChildItem -Path $tempDir -Recurse -Filter "Odin*.exe" | Select-Object -First 1
-            if (-not $odinExeItem) { throw "Odin*.exe no encontrado en el ZIP" }
-            $odinRunDir = $odinExeItem.Directory.FullName
-            # Generar INI
-            $iniPath = Join-Path $odinRunDir "Odin3.ini"
-            [System.IO.File]::WriteAllText($iniPath,
-                "[Setting]`r`nAgreeEULA=1`r`nEULA=1`r`nAcceptLicense=1`r`n",
-                [System.Text.Encoding]::ASCII)
-            try {
-                $rk="HKCU:\Software\Odin3"
-                if (-not (Test-Path $rk)) { New-Item -Path $rk -Force | Out-Null }
-                Set-ItemProperty $rk "EULA" 1 -Type DWord -Force -EA SilentlyContinue
-                Set-ItemProperty $rk "AgreeEULA" 1 -Type DWord -Force -EA SilentlyContinue
-            } catch {}
-            CtrlLog "[+] Lanzando: $($odinExeItem.Name)"
-            $odinProc = Start-Process -FilePath $odinExeItem.FullName `
-                -WorkingDirectory $odinRunDir -Verb RunAs -PassThru
-            $pid2 = if ($odinProc) { $odinProc.Id } else { 0 }
-            CtrlLog "[OK] Odin3 abierto$(if($pid2){' (PID: '+$pid2+')'} else {' (UAC elevado)'})"
-            # Autolimpieza en background
-            $null = Start-Job -ScriptBlock {
-                param($pid2,$dir)
-                if ($pid2 -gt 0) {
-                    try { $p=Get-Process -Id $pid2 -EA SilentlyContinue; if($p){$p.WaitForExit(600000)} } catch {}
-                } else {
-                    $s=Get-Date
-                    while(((Get-Date)-$s).TotalSeconds -lt 300) {
-                        Start-Sleep 10
-                        if (-not (Get-Process -Name "Odin3*" -EA SilentlyContinue)) { break }
+            Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
+            CtrlLog "[+] ZIP extraido OK"
+
+            # Buscar ejecutable
+            $odinExeItem = Get-ChildItem -Path $tempDir -Recurse -Filter "Odin3.exe" | Select-Object -First 1
+            if (-not $odinExeItem) {
+                $odinExeItem = Get-ChildItem -Path $tempDir -Recurse -Filter "Odin*.exe" | Select-Object -First 1
+            }
+            if (-not $odinExeItem) {
+                Remove-Item $tempDir -Recurse -Force -EA SilentlyContinue
+                throw "No se encontro Odin3.exe en el ZIP"
+            }
+            CtrlLog "[+] Ejecutable: $($odinExeItem.Name)"
+
+            # Verificar Odin3.ini en la misma carpeta del exe (debe venir en el ZIP)
+            $iniPath = Join-Path $odinExeItem.Directory.FullName "Odin3.ini"
+            if (-not (Test-Path $iniPath)) {
+                Remove-Item $tempDir -Recurse -Force -EA SilentlyContinue
+                CtrlLog "[!] Odin3.ini no encontrado junto al exe"
+                CtrlLog "[~] El ZIP debe contener Odin3.exe Y Odin3.ini en la misma carpeta"
+                [System.Windows.Forms.MessageBox]::Show(
+                    "Odin3.ini no encontrado en el ZIP`n`nEl archivo Odin3.zip debe contener:`n  - Odin3.exe`n  - Odin3.ini`n`nAgrega Odin3.ini al ZIP junto al exe",
+                    "Odin3.ini faltante","OK","Warning") | Out-Null
+            } else {
+                CtrlLog "[+] Odin3.ini encontrado OK"
+                CtrlLog "[~] Lanzando Odin3 desde su carpeta..."
+                $odinProc = Start-Process `
+                    -FilePath $odinExeItem.FullName `
+                    -WorkingDirectory $odinExeItem.Directory.FullName `
+                    -Verb RunAs `
+                    -PassThru
+                $pid2 = if ($odinProc) { $odinProc.Id } else { 0 }
+                CtrlLog "[OK] Odin3 abierto$(if($pid2){' (PID: '+$pid2+')'} else {' (UAC elevado)'})"
+                # Autolimpieza cuando Odin se cierre
+                $null = Start-Job -ScriptBlock {
+                    param($procId, $dirPath)
+                    if ($procId -gt 0) {
+                        try { $p=Get-Process -Id $procId -EA SilentlyContinue; if($p){$p.WaitForExit(600000)} } catch {}
+                    } else {
+                        $s=Get-Date
+                        while(((Get-Date)-$s).TotalSeconds -lt 300) {
+                            Start-Sleep 10
+                            if (-not (Get-Process -Name "Odin*" -EA SilentlyContinue)) { break }
+                        }
                     }
-                }
-                Start-Sleep 5
-                try { Remove-Item $dir -Recurse -Force -EA SilentlyContinue } catch {}
-            } -ArgumentList $pid2,$tempDir
-        } catch {
-            CtrlLog "[!] Error lanzando Odin: $_"
+                    Start-Sleep 5
+                    try { Remove-Item -Path $dirPath -Recurse -Force -EA SilentlyContinue } catch {}
+                } -ArgumentList $pid2, $tempDir
+            }
         }
-    } else {
-        # Buscar Odin3.exe suelto
-        $exe = $null
-        foreach ($c in @(
-            (Join-Path $script:TOOLS_DIR "Odin3.exe"),
-            (Join-Path $script:TOOLS_DIR "Odin3_v3.14.4.exe"),
-            (Join-Path $script:TOOLS_DIR "Odin3_v3.14.exe"),
-            (Join-Path $script:TOOLS_DIR "Odin_v3.exe"),
-            "Odin3.exe"
-        )) { if (Test-Path $c) { $exe=(Resolve-Path $c).Path; break } }
-        if ($exe) {
-            CtrlLog "[+] Odin3.exe encontrado: $exe"
-            try {
-                Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -Verb RunAs
-                CtrlLog "[OK] Odin3 lanzado"
-            } catch { CtrlLog "[!] Error: $_" }
-        } else {
-            CtrlLog "[!] Odin3.zip ni Odin3.exe encontrados en tools\"
-            CtrlLog "[~] Coloca Odin3.zip en: $($script:TOOLS_DIR)"
-            [System.Windows.Forms.MessageBox]::Show(
-                "Odin3.zip no encontrado en tools\`n`nColoca Odin3.zip en:`n$($script:TOOLS_DIR)",
-                "Odin no encontrado","OK","Warning") | Out-Null
-        }
+    } catch {
+        CtrlLog "[!] Error: $_"
     }
     $btn.Enabled=$true; $btn.Text="ODIN3"
 })
@@ -249,51 +245,75 @@ $btnsC1[1].Add_Click({
     $btn.Enabled=$true; $btn.Text="HxD HEX EDITOR"
 })
 
-# ---- C1[2]: ADB TOOLS FOLDER ----
+# ---- C1[2]: QFIL ----
 $btnsC1[2].Add_Click({
-    $btn=$btnsC1[2]; $btn.Enabled=$false; $btn.Text="ABRIENDO..."
+    $btn=$btnsC1[2]; $btn.Enabled=$false; $btn.Text="BUSCANDO..."
     [System.Windows.Forms.Application]::DoEvents()
     CtrlLog ""
-    CtrlLog "=== ADB TOOLS FOLDER ==="
-    CtrlLog "[+] Carpeta tools: $($script:TOOLS_DIR)"
+    CtrlLog "=== QFIL LAUNCHER ==="
 
-    # Abrir Explorer
-    try { Start-Process explorer.exe $script:TOOLS_DIR; CtrlLog "[OK] Explorer abierto" }
-    catch { CtrlLog "[!] Error abriendo Explorer: $_" }
+    $qfil = $null
 
-    # Listar herramientas con tamanio
-    CtrlLog ""
-    CtrlLog "[~] Herramientas presentes:"
-    $tools = Get-ChildItem $script:TOOLS_DIR -File -EA SilentlyContinue |
-             Where-Object { $_.Extension -imatch "\.(exe|apk|zip|7z|bat|ps1|dll)$" } |
-             Sort-Object Name
-    if ($tools) {
-        foreach ($t in $tools) {
-            $sz = if ($t.Length -ge 1MB) { "$([math]::Round($t.Length/1MB,1)) MB" }
-                  elseif ($t.Length -ge 1KB) { "$([math]::Round($t.Length/1KB,0)) KB" }
-                  else { "$($t.Length) B" }
-            CtrlLog ("  {0,-35} {1}" -f $t.Name, $sz)
-        }
-        CtrlLog "[+] Total: $($tools.Count) archivos"
-    } else { CtrlLog "  (carpeta vacia)" }
-
-    # Version ADB activo
-    CtrlLog ""
-    $adbPath = $null
-    foreach ($c in @(
-        (Join-Path $script:TOOLS_DIR "adb.exe"),
-        "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-    )) { if (Test-Path $c -EA SilentlyContinue) { $adbPath=$c; break } }
-    if (-not $adbPath) {
-        try { $adbPath=$(try{(Get-Command adb -EA SilentlyContinue).Source}catch{""}) } catch {}
+    # 1. tools\
+    foreach ($c in @((Join-Path $script:TOOLS_DIR "QFIL.exe"),(Join-Path $script:TOOLS_DIR "qfil\QFIL.exe"))) {
+        if (Test-Path $c -EA SilentlyContinue) { $qfil=$c; break }
     }
-    if ($adbPath) {
-        $adbVer = (& $adbPath version 2>&1 | Select-Object -First 1) -replace "Android Debug Bridge","ADB"
-        CtrlLog "[+] ADB activo: $adbVer"
-        CtrlLog "    Ruta: $adbPath"
-    } else { CtrlLog "[!] ADB no encontrado en tools\ ni en PATH" }
 
-    $btn.Enabled=$true; $btn.Text="ADB TOOLS FOLDER"
+    # 2. Program Files
+    if (-not $qfil) {
+        $pfTry = @(
+            "$env:ProgramFiles\Qualcomm\QFIL\QFIL.exe",
+            "$env:ProgramFiles\QFIL\QFIL.exe",
+            "$env:ProgramFiles\Qualcomm Flash Image Loader\QFIL.exe",
+            "${env:ProgramFiles(x86)}\Qualcomm\QFIL\QFIL.exe",
+            "${env:ProgramFiles(x86)}\QFIL\QFIL.exe"
+        )
+        foreach ($c in $pfTry) { if (Test-Path $c -EA SilentlyContinue) { $qfil=$c; break } }
+    }
+
+    # 3. PATH
+    if (-not $qfil) {
+        try { $qf2=(Get-Command "QFIL.exe" -EA SilentlyContinue); if($qf2){$qfil=$qf2.Source} } catch {}
+    }
+
+    # 4. Busqueda recursiva en Program Files
+    if (-not $qfil) {
+        CtrlLog "[~] Buscando QFIL.exe en el sistema..."
+        [System.Windows.Forms.Application]::DoEvents()
+        try {
+            foreach ($sp in @("$env:ProgramFiles","${env:ProgramFiles(x86)}")) {
+                if ($qfil) { break }
+                $fnd = Get-ChildItem $sp -Recurse -Filter "QFIL.exe" -EA SilentlyContinue | Select-Object -First 1
+                if ($fnd) { $qfil = $fnd.FullName }
+            }
+        } catch {}
+    }
+
+    if ($qfil) {
+        CtrlLog "[+] QFIL encontrado: $qfil"
+        try {
+            Start-Process -FilePath $qfil -WorkingDirectory (Split-Path $qfil) -Verb RunAs
+            CtrlLog "[OK] QFIL abierto"
+            CtrlLog "[i] QFIL = Qualcomm Flash Image Loader"
+            CtrlLog "[i] Usa EDL mode (Vol- al conectar USB) para dispositivos Qualcomm"
+        } catch {
+            CtrlLog "[~] RunAs fallo - abriendo sin elevacion..."
+            try { Start-Process $qfil; CtrlLog "[OK] QFIL abierto" }
+            catch { CtrlLog "[!] Error: $_" }
+        }
+    } else {
+        CtrlLog "[!] QFIL.exe no encontrado en el sistema"
+        CtrlLog "[~] Opciones:"
+        CtrlLog "    1. Instala Qualcomm USB Driver Package (incluye QFIL)"
+        CtrlLog "    2. Coloca QFIL.exe en: $($script:TOOLS_DIR)"
+        CtrlLog "    3. O instala QPST (Qualcomm Product Support Tools)"
+        $resp = [System.Windows.Forms.MessageBox]::Show(
+            "QFIL.exe no encontrado.`n`nColoca QFIL.exe en tools`\`n`nAbrir pagina de descarga?",
+            "QFIL no encontrado","YesNo","Information")
+        if ($resp -eq "Yes") { Start-Process "https://qfil.download/"; CtrlLog "[~] Pagina abierta" }
+    }
+
+    $btn.Enabled=$true; $btn.Text="QFIL"
 })
 
 # ---- C# ---- C1[3]: USB DRIVERS (dropdown: Samsung / MTK / Qualcomm) ----

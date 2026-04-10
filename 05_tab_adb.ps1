@@ -780,27 +780,26 @@ function Flash-WithHeimdall($imgPath, $partitionFlag) {
 #   - Espera cierre de Odin y limpia carpeta temporal en Job de background
 #   - Cada ejecucion es completamente independiente y sin residuos
 function Open-OdinWithBoot($tarMd5Path) {
-    # Logica identica al odin_launcher.ps1 que funciona:
-    # carpeta GUID limpia + Expand-Archive + buscar Odin*.exe
-    # + verificar INI en la misma carpeta del exe + RunAs + WaitForExit en job
+    # Logica exacta: extraer ZIP, verificar INI en misma carpeta del exe, lanzar
 
     # --- Paso 1: Carpeta temporal UNICA via GUID ---
     $tempDir = Join-Path $env:TEMP ("Odin_" + [guid]::NewGuid().ToString())
     New-Item -ItemType Directory -Path $tempDir | Out-Null
     AutoRoot-Log "[~] Carpeta Odin temporal: $tempDir"
 
-    # --- Paso 2: Buscar y extraer Odin3.zip SIEMPRE de nuevo (nunca reutilizar) ---
+    # --- Paso 2: Extraer Odin3.zip ---
     $odinZip = Join-Path $script:TOOLS_DIR "Odin3.zip"
     if (-not (Test-Path $odinZip)) {
         AutoRoot-Log "[!] No se encontro Odin3.zip en: $($script:TOOLS_DIR)"
-        AutoRoot-Log "[~] Coloca Odin3.zip en la carpeta tools\"
+        AutoRoot-Log "[~] Coloca Odin3.zip (con Odin3.exe y Odin3.ini) en tools\"
         AutoRoot-Log "[~] Abre Odin manualmente y carga: $tarMd5Path"
         Remove-Item $tempDir -Recurse -Force -EA SilentlyContinue
         Start-Process explorer.exe (Split-Path $tarMd5Path) -EA SilentlyContinue
         return
     }
 
-    AutoRoot-Log "[~] Extrayendo Odin3.zip a instancia temporal limpia..."
+    AutoRoot-Log "[+] Odin3.zip encontrado en tools\"
+    AutoRoot-Log "[~] Extrayendo a carpeta temporal limpia..."
     try {
         Expand-Archive -Path $odinZip -DestinationPath $tempDir -Force
         AutoRoot-Log "[+] ZIP extraido OK"
@@ -810,41 +809,32 @@ function Open-OdinWithBoot($tarMd5Path) {
         return
     }
 
-    # Buscar el ejecutable (mas flexible, igual que el launcher)
-    $odinExeItem = Get-ChildItem -Path $tempDir -Recurse -Filter "Odin*.exe" | Select-Object -First 1
+    # --- Paso 3: Buscar Odin3.exe ---
+    $odinExeItem = Get-ChildItem -Path $tempDir -Recurse -Filter "Odin3.exe" | Select-Object -First 1
     if (-not $odinExeItem) {
-        AutoRoot-Log "[!] No se encontro el ejecutable de Odin en el ZIP"
+        $odinExeItem = Get-ChildItem -Path $tempDir -Recurse -Filter "Odin*.exe" | Select-Object -First 1
+    }
+    if (-not $odinExeItem) {
+        AutoRoot-Log "[!] No se encontro Odin3.exe en el ZIP"
         Remove-Item $tempDir -Recurse -Force -EA SilentlyContinue
         return
     }
     $odinExe    = $odinExeItem.FullName
     $odinRunDir = $odinExeItem.Directory.FullName
-    AutoRoot-Log "[+] Odin3.exe encontrado: $($odinExeItem.Name)"
+    AutoRoot-Log "[+] Ejecutable: $($odinExeItem.Name)"
 
-    # --- Paso 3: Verificar e inyectar Odin3.ini en la MISMA carpeta del exe ---
+    # --- Paso 4: Verificar Odin3.ini en la misma carpeta del exe ---
+    # El ZIP DEBE incluir Odin3.ini junto a Odin3.exe
     $iniPath = Join-Path $odinRunDir "Odin3.ini"
     if (-not (Test-Path $iniPath)) {
-        AutoRoot-Log "[!] Falta Odin3.ini junto al ejecutable"
-        AutoRoot-Log "[~] Generando Odin3.ini de emergencia..."
+        AutoRoot-Log "[!] Odin3.ini no encontrado junto al exe"
+        AutoRoot-Log "[~] El ZIP debe contener Odin3.exe Y Odin3.ini en la misma carpeta"
+        Remove-Item $tempDir -Recurse -Force -EA SilentlyContinue
+        return
     }
-    try {
-        [System.IO.File]::WriteAllText(
-            $iniPath,
-            "[Setting]`r`nAgreeEULA=1`r`nEULA=1`r`nAcceptLicense=1`r`n",
-            [System.Text.Encoding]::ASCII)
-        AutoRoot-Log "[+] Odin3.ini generado/actualizado OK"
-    } catch { AutoRoot-Log "[~] INI: $_" }
+    AutoRoot-Log "[+] Odin3.ini verificado OK"
 
-    # Suprimir EULA via registro tambien (doble seguro)
-    try {
-        $rk = "HKCU:\Software\Odin3"
-        if (-not (Test-Path $rk)) { New-Item -Path $rk -Force | Out-Null }
-        Set-ItemProperty -Path $rk -Name "EULA"          -Value 1    -Type DWord  -Force -EA SilentlyContinue
-        Set-ItemProperty -Path $rk -Name "AgreeEULA"     -Value 1    -Type DWord  -Force -EA SilentlyContinue
-        Set-ItemProperty -Path $rk -Name "AcceptLicense" -Value "1"  -Type String -Force -EA SilentlyContinue
-    } catch {}
-
-    # --- Paso 4: Copiar ruta al portapapeles ---
+    # --- Paso 5: Copiar ruta del boot al portapapeles ---
     $clipOk = $false
     try {
         [System.Windows.Forms.Clipboard]::SetText($tarMd5Path)
@@ -856,9 +846,8 @@ function Open-OdinWithBoot($tarMd5Path) {
         else { AutoRoot-Log "[~] Portapapeles no disponible - copia la ruta manualmente" }
     }
 
-    # --- Paso 5: Lanzar Odin DESDE su carpeta (WorkingDirectory = carpeta del exe) ---
-    # Identico al odin_launcher.ps1: Start-Process con RunAs y WorkingDirectory correcto
-    AutoRoot-Log "[~] Abriendo Odin3 con elevacion de privilegios..."
+    # --- Paso 6: Lanzar Odin3 DESDE su carpeta ---
+    AutoRoot-Log "[~] Lanzando Odin3..."
     $odinProc = $null
     try {
         $odinProc = Start-Process `
@@ -867,9 +856,9 @@ function Open-OdinWithBoot($tarMd5Path) {
             -Verb RunAs `
             -PassThru
         if ($odinProc) { AutoRoot-Log "[+] Odin3 abierto (PID: $($odinProc.Id))" }
-        else           { AutoRoot-Log "[+] Odin3 lanzado (UAC elevado, PID no disponible)" }
+        else           { AutoRoot-Log "[+] Odin3 lanzado (UAC elevado)" }
     } catch {
-        AutoRoot-Log "[~] RunAs fallo ($($_.Exception.Message)) - intentando sin elevacion..."
+        AutoRoot-Log "[~] RunAs fallo - intentando sin elevacion..."
         try {
             $psi2 = New-Object System.Diagnostics.ProcessStartInfo
             $psi2.FileName         = $odinExe
@@ -883,7 +872,7 @@ function Open-OdinWithBoot($tarMd5Path) {
         }
     }
 
-    # --- Paso 6: Job de autolimpieza (espera cierre de Odin y borra carpeta temp) ---
+    # --- Paso 7: Autolimpieza en background ---
     $cleanDir = $tempDir
     $cleanPid = if ($odinProc) { $odinProc.Id } else { 0 }
     $null = Start-Job -ScriptBlock {
@@ -891,10 +880,9 @@ function Open-OdinWithBoot($tarMd5Path) {
         if ($procId -gt 0) {
             try {
                 $p = Get-Process -Id $procId -EA SilentlyContinue
-                if ($p) { $p.WaitForExit(600000) }  # max 10 min
+                if ($p) { $p.WaitForExit(600000) }
             } catch {}
         } else {
-            # Sin PID (UAC elevado), esperar 5 min o hasta que el proceso desaparezca
             $start = Get-Date
             while (((Get-Date) - $start).TotalSeconds -lt 300) {
                 Start-Sleep -Seconds 10
@@ -904,31 +892,17 @@ function Open-OdinWithBoot($tarMd5Path) {
         }
         Start-Sleep -Seconds 5
         try { Remove-Item -Path $dirPath -Recurse -Force -EA SilentlyContinue } catch {}
-        Start-Sleep -Seconds 3
-        if (Test-Path $dirPath) {
-            try { Remove-Item -Path $dirPath -Recurse -Force -EA SilentlyContinue } catch {}
-        }
     } -ArgumentList $cleanPid, $cleanDir
-    AutoRoot-Log "[~] Autolimpieza activada: carpeta se borra al cerrar Odin"
+    AutoRoot-Log "[~] Autolimpieza activada"
 
-    # --- Paso 7: Instrucciones ---
     AutoRoot-Log ""
     AutoRoot-Log "================================================"
     AutoRoot-Log "  ODIN ABIERTO - SIGUE ESTOS PASOS:"
     AutoRoot-Log "================================================"
     AutoRoot-Log "  1. En Odin presiona el boton [ AP ]"
     AutoRoot-Log "  2. En el dialogo de archivo presiona Ctrl+V"
-    AutoRoot-Log "     (la ruta del TAR ya esta en el portapapeles)"
-    AutoRoot-Log "     Archivo: $([System.IO.Path]::GetFileName($tarMd5Path))"
-    AutoRoot-Log "  3. Asegurate que el equipo este en DOWNLOAD MODE"
-    AutoRoot-Log "     (pantalla azul/verde con icono de descarga)"
-    AutoRoot-Log "  4. Presiona [ Start ] en Odin"
+    AutoRoot-Log "  3. Acepta y presiona START en Odin"
     AutoRoot-Log "================================================"
-    AutoRoot-Log "  Ruta completa: $tarMd5Path"
-    AutoRoot-Log "================================================"
-
-    # Abrir Explorer en la carpeta del TAR como referencia
-    Start-Process explorer.exe (Split-Path $tarMd5Path) -EA SilentlyContinue
 }
 
 # ---- Verificar root post-flash ----
@@ -4961,75 +4935,268 @@ $btnsA2[5].Add_Click({
     [System.Windows.Forms.Application]::DoEvents()
     $Global:logAdb.Clear()
     AdbLog "=============================================="
-    AdbLog "   BUSCAR FIRMWARE SAMSUNG EN SAMFW  -  RNX TOOL PRO"
+    AdbLog "   SAMFW FIRMWARE DOWNLOADER  -  RNX TOOL PRO"
     AdbLog "   $(Get-Date -Format 'dd/MM/yyyy  HH:mm:ss')"
     AdbLog "=============================================="
     AdbLog ""
 
-    if (-not (Check-ADB)) {
-        AdbLog "[!] Sin dispositivo ADB conectado."
-        $btn.Enabled = $true; $btn.Text = "SAMFW FIRMWARE"; return
-    }
+    # =========================================================
+    # MINI INTERFAZ SAMFW - 2 modos:
+    #   A) Auto-identificar desde dispositivo conectado
+    #   B) Escribir modelo manualmente
+    # =========================================================
+    $frmSamFW = New-Object System.Windows.Forms.Form
+    $frmSamFW.Text = "SamFW Firmware Downloader - RNX TOOL PRO"
+    $frmSamFW.ClientSize = New-Object System.Drawing.Size(560, 400)
+    $frmSamFW.BackColor = [System.Drawing.Color]::FromArgb(14,14,22)
+    $frmSamFW.FormBorderStyle = "FixedDialog"
+    $frmSamFW.StartPosition = "CenterScreen"
+    $frmSamFW.TopMost = $true
 
-    function SamFW-Prop($prop) {
-        $r = & adb shell getprop $prop 2>$null
-        if ($r -is [array]) { return ($r -join "").Trim() }
-        return "$r".Trim()
-    }
+    # Header
+    $lbHdr = New-Object Windows.Forms.Label
+    $lbHdr.Text = "  SAMFW FIRMWARE DOWNLOADER"
+    $lbHdr.Location = New-Object System.Drawing.Point(0,0)
+    $lbHdr.Size = New-Object System.Drawing.Size(560,34)
+    $lbHdr.BackColor = [System.Drawing.Color]::FromArgb(0,120,200)
+    $lbHdr.ForeColor = [System.Drawing.Color]::White
+    $lbHdr.Font = New-Object System.Drawing.Font("Segoe UI",11,[System.Drawing.FontStyle]::Bold)
+    $lbHdr.TextAlign = "MiddleLeft"
+    $frmSamFW.Controls.Add($lbHdr)
 
-    AdbLog "[~] Leyendo informacion del dispositivo..."
-    $sfBrand   = (SamFW-Prop "ro.product.brand").ToUpper()
-    $sfModel   = (SamFW-Prop "ro.product.model")
-    $sfBuild   = (SamFW-Prop "ro.build.display.id")
-    $sfBoot    = (SamFW-Prop "ro.boot.bootloader")
-    $sfAndroid = (SamFW-Prop "ro.build.version.release")
-    $sfCSC = (SamFW-Prop "ro.csc.sales_code")
-    if (-not $sfCSC) { $sfCSC = (SamFW-Prop "ro.csc.country.code") }
-    if (-not $sfCSC) { $sfCSC = (SamFW-Prop "ro.product.csc") }
+    # ---- SECCION A: Auto-identificar ----
+    $pnlAuto = New-Object Windows.Forms.Panel
+    $pnlAuto.Location = New-Object System.Drawing.Point(10,44)
+    $pnlAuto.Size = New-Object System.Drawing.Size(538,160)
+    $pnlAuto.BackColor = [System.Drawing.Color]::FromArgb(20,20,32)
+    $pnlAuto.BorderStyle = "FixedSingle"
+    $frmSamFW.Controls.Add($pnlAuto)
 
-    if ($sfBrand -notmatch "SAMSUNG") {
-        AdbLog "[!] Dispositivo: $sfBrand - Esta funcion es exclusiva para SAMSUNG."
-        $btn.Enabled = $true; $btn.Text = "SAMFW FIRMWARE"; return
-    }
-    if (-not $sfModel) {
-        AdbLog "[!] No se pudo leer el modelo. Verifica la conexion ADB."
-        $btn.Enabled = $true; $btn.Text = "SAMFW FIRMWARE"; return
-    }
+    $lbAutoTitle = New-Object Windows.Forms.Label
+    $lbAutoTitle.Text = "  MODO 1: Auto-identificar (requiere dispositivo conectado por ADB)"
+    $lbAutoTitle.Location = New-Object System.Drawing.Point(0,0)
+    $lbAutoTitle.Size = New-Object System.Drawing.Size(538,26)
+    $lbAutoTitle.BackColor = [System.Drawing.Color]::FromArgb(0,80,140)
+    $lbAutoTitle.ForeColor = [System.Drawing.Color]::White
+    $lbAutoTitle.Font = New-Object System.Drawing.Font("Segoe UI",8.5,[System.Drawing.FontStyle]::Bold)
+    $lbAutoTitle.TextAlign = "MiddleLeft"
+    $pnlAuto.Controls.Add($lbAutoTitle)
 
-    # Extraer binario del bootloader
-    $sfBinary = ""
-    try { $sfBinary = Get-BinaryFromBuild $sfBoot } catch {}
-    if (-not $sfBinary -or $sfBinary -eq "UNKNOWN") {
-        if ($sfBuild -match "U(\d)[A-Z0-9]*$" -or $sfBoot -match "U(\d)[A-Z0-9]*$") { $sfBinary = $Matches[1] }
-        else { $sfBinary = "?" }
-    }
+    # Labels for device info
+    $lbAutoModel = New-Object Windows.Forms.Label
+    $lbAutoModel.Text = "Modelo  : --"
+    $lbAutoModel.Location = New-Object System.Drawing.Point(14,34)
+    $lbAutoModel.Size = New-Object System.Drawing.Size(510,18)
+    $lbAutoModel.ForeColor = [System.Drawing.Color]::Lime
+    $lbAutoModel.Font = New-Object System.Drawing.Font("Consolas",9)
+    $pnlAuto.Controls.Add($lbAutoModel)
 
-    $sfCSCDesc = ""
-    try { if ($sfCSC) { $sfCSCDesc = Get-CSCDecoded $sfCSC } } catch {}
-    $sfCSCLine = if ($sfCSC) { if ($sfCSCDesc) { "$sfCSC  ($sfCSCDesc)" } else { $sfCSC } } else { "NO DETECTADO" }
+    $lbAutoCSC = New-Object Windows.Forms.Label
+    $lbAutoCSC.Text = "CSC     : --"
+    $lbAutoCSC.Location = New-Object System.Drawing.Point(14,54)
+    $lbAutoCSC.Size = New-Object System.Drawing.Size(510,18)
+    $lbAutoCSC.ForeColor = [System.Drawing.Color]::Lime
+    $lbAutoCSC.Font = New-Object System.Drawing.Font("Consolas",9)
+    $pnlAuto.Controls.Add($lbAutoCSC)
 
-    AdbLog "[+] Dispositivo  : SAMSUNG  $sfModel"
-    AdbLog "[+] Build        : $sfBuild"
-    AdbLog "[+] Bootloader   : $sfBoot"
-    AdbLog "[+] Binario      : $sfBinary"
-    AdbLog "[+] CSC / Region : $sfCSCLine"
-    AdbLog "[+] Android      : $sfAndroid"
-    AdbLog ""
+    $lbAutoBuild = New-Object Windows.Forms.Label
+    $lbAutoBuild.Text = "Build   : --"
+    $lbAutoBuild.Location = New-Object System.Drawing.Point(14,74)
+    $lbAutoBuild.Size = New-Object System.Drawing.Size(510,18)
+    $lbAutoBuild.ForeColor = [System.Drawing.Color]::FromArgb(180,180,180)
+    $lbAutoBuild.Font = New-Object System.Drawing.Font("Consolas",8)
+    $pnlAuto.Controls.Add($lbAutoBuild)
 
-    $sfURL = if ($sfCSC) { "https://samfw.com/firmware/$sfModel/$sfCSC" } else { "https://samfw.com/firmware/$sfModel" }
-    AdbLog "[~] URL: $sfURL"
-    AdbLog ""
+    $lbAutoUrl = New-Object Windows.Forms.Label
+    $lbAutoUrl.Text = "URL     : --"
+    $lbAutoUrl.Location = New-Object System.Drawing.Point(14,94)
+    $lbAutoUrl.Size = New-Object System.Drawing.Size(510,18)
+    $lbAutoUrl.ForeColor = [System.Drawing.Color]::Cyan
+    $lbAutoUrl.Font = New-Object System.Drawing.Font("Consolas",7.5)
+    $pnlAuto.Controls.Add($lbAutoUrl)
 
-    try { Start-Process $sfURL; AdbLog "[OK] Navegador abierto." }
-    catch { AdbLog "[!] Error abriendo navegador: $_"; AdbLog "[~] Copia la URL: $sfURL" }
+    $btnAutoDetect = New-Object Windows.Forms.Button
+    $btnAutoDetect.Text = "AUTO IDENTIFICAR"
+    $btnAutoDetect.Location = New-Object System.Drawing.Point(14,122)
+    $btnAutoDetect.Size = New-Object System.Drawing.Size(160,30)
+    $btnAutoDetect.FlatStyle = "Flat"
+    $btnAutoDetect.ForeColor = [System.Drawing.Color]::Lime
+    $btnAutoDetect.FlatAppearance.BorderColor = [System.Drawing.Color]::Lime
+    $btnAutoDetect.BackColor = [System.Drawing.Color]::FromArgb(15,35,15)
+    $btnAutoDetect.Font = New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
+    $pnlAuto.Controls.Add($btnAutoDetect)
 
-    AdbLog ""
-    AdbLog "[i] En SamFW:"
-    if ($sfBinary -and $sfBinary -ne "?") { AdbLog "     - Busca BINARY: $sfBinary" }
-    AdbLog "     - Haz clic en DOWNLOAD"
-    AdbLog "     - Flashea el .zip con Odin"
-    AdbLog "[i] SamFW requiere cuenta gratuita para descargar."
-    AdbLog "=============================================="
-    $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  SamFW: $sfModel  B:$sfBinary  CSC:$sfCSC"
+    $btnAutoOpen = New-Object Windows.Forms.Button
+    $btnAutoOpen.Text = "IR A SAMFW"
+    $btnAutoOpen.Location = New-Object System.Drawing.Point(184,122)
+    $btnAutoOpen.Size = New-Object System.Drawing.Size(130,30)
+    $btnAutoOpen.FlatStyle = "Flat"
+    $btnAutoOpen.ForeColor = [System.Drawing.Color]::White
+    $btnAutoOpen.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(0,120,200)
+    $btnAutoOpen.BackColor = [System.Drawing.Color]::FromArgb(0,60,120)
+    $btnAutoOpen.Font = New-Object System.Drawing.Font("Segoe UI",8,[System.Drawing.FontStyle]::Bold)
+    $btnAutoOpen.Enabled = $false
+    $pnlAuto.Controls.Add($btnAutoOpen)
+
+    # Variables for auto-detected URL
+    $script:SamFW_AutoURL = ""
+
+    $btnAutoDetect.Add_Click({
+        $btnAutoDetect.Enabled = $false; $btnAutoDetect.Text = "LEYENDO..."
+        [System.Windows.Forms.Application]::DoEvents()
+        try {
+            function SamFW-Prop2($prop) {
+                $r = & adb shell getprop $prop 2>$null
+                if ($r -is [array]) { return ($r -join "").Trim() }
+                return "$r".Trim()
+            }
+            $sfModel2   = SamFW-Prop2 "ro.product.model"
+            $sfBrand2   = (SamFW-Prop2 "ro.product.brand").ToUpper()
+            $sfBuild2   = SamFW-Prop2 "ro.build.display.id"
+            $sfBoot2    = SamFW-Prop2 "ro.boot.bootloader"
+            $sfCSC2 = SamFW-Prop2 "ro.csc.sales_code"
+            if (-not $sfCSC2) { $sfCSC2 = SamFW-Prop2 "ro.csc.country.code" }
+            if (-not $sfCSC2) { $sfCSC2 = SamFW-Prop2 "ro.product.csc" }
+
+            if (-not $sfModel2) {
+                $lbAutoModel.Text = "Modelo  : [Sin dispositivo ADB]"
+                $lbAutoModel.ForeColor = [System.Drawing.Color]::OrangeRed
+            } elseif ($sfBrand2 -notmatch "SAMSUNG") {
+                $lbAutoModel.Text = "Modelo  : $sfModel2  [$sfBrand2] - Solo Samsung"
+                $lbAutoModel.ForeColor = [System.Drawing.Color]::OrangeRed
+            } else {
+                $lbAutoModel.Text = "Modelo  : $sfModel2"
+                $lbAutoModel.ForeColor = [System.Drawing.Color]::Lime
+                $lbAutoCSC.Text  = "CSC     : $(if($sfCSC2){$sfCSC2}else{'NO DETECTADO'})"
+                $lbAutoBuild.Text = "Build   : $sfBuild2  |  Boot: $sfBoot2"
+                $sfURL2 = if ($sfCSC2) { "https://samfw.com/firmware/$sfModel2/$sfCSC2" } else { "https://samfw.com/firmware/$sfModel2" }
+                $lbAutoUrl.Text = "URL     : $sfURL2"
+                $script:SamFW_AutoURL = $sfURL2
+                $btnAutoOpen.Enabled = $true
+                AdbLog "[+] Auto-detecto: $sfModel2 | CSC: $sfCSC2 | Build: $sfBuild2"
+                AdbLog "[+] URL: $sfURL2"
+            }
+        } catch {
+            $lbAutoModel.Text = "Error: $_"
+            $lbAutoModel.ForeColor = [System.Drawing.Color]::Red
+        }
+        $btnAutoDetect.Enabled = $true; $btnAutoDetect.Text = "AUTO IDENTIFICAR"
+    })
+
+    $btnAutoOpen.Add_Click({
+        if ($script:SamFW_AutoURL) {
+            try { Start-Process $script:SamFW_AutoURL; AdbLog "[OK] Navegador abierto: $($script:SamFW_AutoURL)" }
+            catch { AdbLog "[!] Error: $_" }
+        }
+    })
+
+    # ---- SECCION B: Busqueda manual por modelo ----
+    $pnlManual = New-Object Windows.Forms.Panel
+    $pnlManual.Location = New-Object System.Drawing.Point(10,216)
+    $pnlManual.Size = New-Object System.Drawing.Size(538,140)
+    $pnlManual.BackColor = [System.Drawing.Color]::FromArgb(20,20,32)
+    $pnlManual.BorderStyle = "FixedSingle"
+    $frmSamFW.Controls.Add($pnlManual)
+
+    $lbManualTitle = New-Object Windows.Forms.Label
+    $lbManualTitle.Text = "  MODO 2: Buscar por modelo (sin telefono conectado)"
+    $lbManualTitle.Location = New-Object System.Drawing.Point(0,0)
+    $lbManualTitle.Size = New-Object System.Drawing.Size(538,26)
+    $lbManualTitle.BackColor = [System.Drawing.Color]::FromArgb(80,50,0)
+    $lbManualTitle.ForeColor = [System.Drawing.Color]::White
+    $lbManualTitle.Font = New-Object System.Drawing.Font("Segoe UI",8.5,[System.Drawing.FontStyle]::Bold)
+    $lbManualTitle.TextAlign = "MiddleLeft"
+    $pnlManual.Controls.Add($lbManualTitle)
+
+    $lbManModel = New-Object Windows.Forms.Label
+    $lbManModel.Text = "Modelo Samsung:"
+    $lbManModel.Location = New-Object System.Drawing.Point(14,36)
+    $lbManModel.Size = New-Object System.Drawing.Size(110,20)
+    $lbManModel.ForeColor = [System.Drawing.Color]::LightGray
+    $lbManModel.Font = New-Object System.Drawing.Font("Segoe UI",8)
+    $pnlManual.Controls.Add($lbManModel)
+
+    $txtManModel = New-Object Windows.Forms.TextBox
+    $txtManModel.Location = New-Object System.Drawing.Point(130,34)
+    $txtManModel.Size = New-Object System.Drawing.Size(160,24)
+    $txtManModel.BackColor = [System.Drawing.Color]::FromArgb(30,30,45)
+    $txtManModel.ForeColor = [System.Drawing.Color]::White
+    $txtManModel.BorderStyle = "FixedSingle"
+    $txtManModel.Font = New-Object System.Drawing.Font("Consolas",9,[System.Drawing.FontStyle]::Bold)
+    $txtManModel.Text = "SM-"
+    $pnlManual.Controls.Add($txtManModel)
+
+    $lbManCSC = New-Object Windows.Forms.Label
+    $lbManCSC.Text = "CSC (opcional):"
+    $lbManCSC.Location = New-Object System.Drawing.Point(14,66)
+    $lbManCSC.Size = New-Object System.Drawing.Size(110,20)
+    $lbManCSC.ForeColor = [System.Drawing.Color]::LightGray
+    $lbManCSC.Font = New-Object System.Drawing.Font("Segoe UI",8)
+    $pnlManual.Controls.Add($lbManCSC)
+
+    $txtManCSC = New-Object Windows.Forms.TextBox
+    $txtManCSC.Location = New-Object System.Drawing.Point(130,64)
+    $txtManCSC.Size = New-Object System.Drawing.Size(80,24)
+    $txtManCSC.BackColor = [System.Drawing.Color]::FromArgb(30,30,45)
+    $txtManCSC.ForeColor = [System.Drawing.Color]::Cyan
+    $txtManCSC.BorderStyle = "FixedSingle"
+    $txtManCSC.Font = New-Object System.Drawing.Font("Consolas",9)
+    $txtManCSC.Text = ""
+    $pnlManual.Controls.Add($txtManCSC)
+
+    $lbManHint = New-Object Windows.Forms.Label
+    $lbManHint.Text = "Ej: SM-A546B / CSC: ZTO, OXA, EUX, CHC..."
+    $lbManHint.Location = New-Object System.Drawing.Point(14,90)
+    $lbManHint.Size = New-Object System.Drawing.Size(510,16)
+    $lbManHint.ForeColor = [System.Drawing.Color]::FromArgb(100,100,120)
+    $lbManHint.Font = New-Object System.Drawing.Font("Segoe UI",7.5)
+    $pnlManual.Controls.Add($lbManHint)
+
+    $btnManOpen = New-Object Windows.Forms.Button
+    $btnManOpen.Text = "BUSCAR EN SAMFW"
+    $btnManOpen.Location = New-Object System.Drawing.Point(300,34)
+    $btnManOpen.Size = New-Object System.Drawing.Size(150,56)
+    $btnManOpen.FlatStyle = "Flat"
+    $btnManOpen.ForeColor = [System.Drawing.Color]::FromArgb(255,180,0)
+    $btnManOpen.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(255,180,0)
+    $btnManOpen.BackColor = [System.Drawing.Color]::FromArgb(35,28,0)
+    $btnManOpen.Font = New-Object System.Drawing.Font("Segoe UI",9,[System.Drawing.FontStyle]::Bold)
+    $pnlManual.Controls.Add($btnManOpen)
+
+    $btnManOpen.Add_Click({
+        $manModel = $txtManModel.Text.Trim().ToUpper()
+        $manCSC   = $txtManCSC.Text.Trim().ToUpper()
+        if (-not $manModel -or $manModel -eq "SM-") {
+            [System.Windows.Forms.MessageBox]::Show("Ingresa un modelo Samsung (ej: SM-A546B)","Modelo requerido","OK","Warning") | Out-Null
+            return
+        }
+        $manURL = if ($manCSC) { "https://samfw.com/firmware/$manModel/$manCSC" } else { "https://samfw.com/firmware/$manModel" }
+        AdbLog "[+] Busqueda manual: $manModel | CSC: $(if($manCSC){$manCSC}else{"(todos)"})" 
+        AdbLog "[+] URL: $manURL"
+        try { Start-Process $manURL; AdbLog "[OK] Navegador abierto" }
+        catch { AdbLog "[!] Error: $_" }
+    })
+
+    # Boton cerrar
+    $btnClose = New-Object Windows.Forms.Button
+    $btnClose.Text = "CERRAR"
+    $btnClose.Location = New-Object System.Drawing.Point(200,366)
+    $btnClose.Size = New-Object System.Drawing.Size(160,28)
+    $btnClose.FlatStyle = "Flat"
+    $btnClose.ForeColor = [System.Drawing.Color]::Gray
+    $btnClose.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(70,70,70)
+    $btnClose.BackColor = [System.Drawing.Color]::FromArgb(25,25,35)
+    $btnClose.Font = New-Object System.Drawing.Font("Segoe UI",8.5,[System.Drawing.FontStyle]::Bold)
+    $btnClose.Add_Click({ $frmSamFW.Close() })
+    $frmSamFW.Controls.Add($btnClose)
+
+    AdbLog "[i] Mini interfaz SamFW abierta"
+    AdbLog "    Modo 1: conecta el telefono por ADB y usa AUTO IDENTIFICAR"
+    AdbLog "    Modo 2: escribe el modelo manualmente para buscar sin telefono"
+    AdbLog "    SamFW requiere cuenta gratuita para descargar."
+
+    $frmSamFW.ShowDialog() | Out-Null
+
+    $Global:lblStatus.Text = "  RNX TOOL PRO v2.3  |  SamFW Downloader  |  samfw.com"
     $btn.Enabled = $true; $btn.Text = "SAMFW FIRMWARE"
 })

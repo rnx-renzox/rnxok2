@@ -45,7 +45,7 @@ $grpG3 = New-GBox $tabGen "TALLER / GESTION"        $GX_PAD $GX_Y3B $GX_GW $GX_G
 
 $GL1=@("ORGANIZAR FIRMWARE","RENOMBRAR ARCHIVOS","EXTRAER FIRMWARE","VERIFICAR CHECKSUM")
 $GL2=@("OEMINFO MDM HONOR","MODEM MI ACCOUNT","EFS SAMSUNG SIM 2","PERSIST MI ACCOUNT",
-       "HABILITAR MISC MOTOROLA","FLASH PARTICION IMG")
+       "ACTIVAR RESET / MISC MOTOROLA","FLASH PARTICION IMG")
 $GL3=@("CREAR FICHA CLIENTE","ADMIN CLIENTES","GENERAR REPORTE","ABRIR CARPETA TRABAJO")
 
 $btnsG1=Place-Grid $grpG1 $GL1 "Red"     2 $GX_BTW $GX_BTH $GX_PPX $GX_PPY $GX_GGX $GX_GGY
@@ -1502,7 +1502,7 @@ $btnPersist.Add_Click({
     $Global:_persistTimer.Start()
 })
 
-#=================================================================# HABILITAR MISC MOTOROLA (btnsG2[4])
+#=================================================================# ACTIVAR RESET / MISC MOTOROLA (btnsG2[4])
 # Parcha misc.bin para habilitar opciones de recovery en Motorola
 # Inserta los bytes de boot-recovery + wipe_data + wipe_cache en offset 0x00
 #==========================================================================
@@ -1513,7 +1513,7 @@ $btnRepairNV.Add_Click({
     try {
         GenLog ""
         GenLog "[*] =========================================="
-        GenLog "[*] HABILITAR MISC MOTOROLA - RNX TOOL PRO"
+        GenLog "[*] ACTIVAR RESET / MISC MOTOROLA - RNX TOOL PRO"
         GenLog "[*] Parcha misc.bin para activar recovery"
         GenLog "[*] =========================================="
         GenLog ""
@@ -1565,7 +1565,7 @@ $btnRepairNV.Add_Click({
 
         # ---- Backup con SHA256 ----
         $stamp  = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-        $bakDir = Join-Path (Join-Path $script:SCRIPT_ROOT "BACKUPS") "MISC_MOTOROLA\$stamp"
+        $bakDir = Join-Path (Join-Path $script:SCRIPT_ROOT "BACKUPS") "ACTIVAR RESET MISC MOTOROLA\$stamp"
         New-Item $bakDir -ItemType Directory -Force | Out-Null
         $bakPath = Join-Path $bakDir ($miscName + ".bak")
         [System.IO.File]::WriteAllBytes($bakPath, $bytes)
@@ -1610,9 +1610,11 @@ $btnRepairNV.Add_Click({
 
         # ---- Guardar archivo parcheado ----
         $outName  = [System.IO.Path]::GetFileNameWithoutExtension($miscName) + "_patched.bin"
-        $outPath  = Join-Path $miscDir $outName
+        $outPath  = Join-Path $bakDir $outName
         [System.IO.File]::WriteAllBytes($outPath, $bytes)
-        Set-Content (Join-Path $miscDir ($outName + ".sha256.txt")) $hashNew
+        Set-Content (Join-Path $bakDir ($outName + ".sha256.txt")) $hashNew
+        # Copia adicional en carpeta original del archivo fuente
+        try { [System.IO.File]::WriteAllBytes((Join-Path $miscDir $outName), $bytes) } catch {}
 
         # ---- Guardar meta ----
         $meta = @"
@@ -1647,7 +1649,7 @@ Payload     : 160 bytes (boot-recovery + recovery/wipe_data + recovery/wipe_cach
         if ($abrir -eq "Yes") { Start-Process explorer.exe $miscDir }
 
     } catch { GenLog "[!] Error: $_" }
-    finally { $btn.Enabled = $true; $btn.Text = "HABILITAR MISC MOTOROLA" }
+    finally { $btn.Enabled = $true; $btn.Text = "ACTIVAR RESET / MISC MOTOROLA" }
 })
 
 #==========================================================================
